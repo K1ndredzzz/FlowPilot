@@ -69,15 +69,17 @@ test('background HeroSMS phone prefix inference covers built-in major countries'
   const supportedBlock = source.slice(supportedStart, source.indexOf('];', supportedStart));
   const prefixBlock = source.slice(prefixStart, prefixEnd);
 
-  assert.match(supportedBlock, /\[6,\s*52,\s*187,\s*16,\s*151,\s*43,\s*73,\s*10/);
+  assert.match(supportedBlock, /\[6,\s*52,\s*73,\s*21,\s*187,\s*16,\s*182,\s*43,\s*78,\s*10/);
   [
     ['84', 10, 'Vietnam'],
     ['66', 52, 'Thailand'],
     ['62', 6, 'Indonesia'],
     ['44', 16, 'United Kingdom'],
-    ['81', 151, 'Japan'],
+    ['81', 182, 'Japan'],
     ['49', 43, 'Germany'],
-    ['33', 73, 'France'],
+    ['33', 78, 'France'],
+    ['55', 73, 'Brazil'],
+    ['20', 21, 'Egypt'],
     ['1', 187, 'USA'],
   ].forEach(([prefix, id, label]) => {
     assert.match(prefixBlock, new RegExp(`prefix:\\s*'${prefix}'[\\s\\S]*id:\\s*${id}[\\s\\S]*label:\\s*'${label}'`));

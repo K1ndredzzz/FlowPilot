@@ -13,6 +13,17 @@ function createTextResponse(payload, ok = true, status = ok ? 200 : 400) {
   };
 }
 
+test('5sim provider built-in country fallback includes Brazil and Egypt', () => {
+  assert.equal(
+    api.SUPPORTED_COUNTRY_ITEMS.some((country) => country.id === 'brazil' && country.label === '巴西 (Brazil)'),
+    true
+  );
+  assert.equal(
+    api.SUPPORTED_COUNTRY_ITEMS.some((country) => country.id === 'egypt' && country.label === '埃及 (Egypt)'),
+    true
+  );
+});
+
 test('5sim provider fetches profile balance with bearer token', async () => {
   const requests = [];
   const provider = api.createProvider({

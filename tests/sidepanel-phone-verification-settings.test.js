@@ -148,7 +148,7 @@ test('sidepanel html exposes phone verification toggle and multi-provider SMS ro
   assert.doesNotMatch(html, /id="input-account-run-history-text-enabled"/);
 });
 
-test('sidepanel loads SMS country lists silently during startup fallback', () => {
+test('sidepanel silently refreshes live SMS country lists during startup', () => {
   const heroLoader = extractFunction('loadHeroSmsCountries');
   const fiveSimLoader = extractFunction('loadFiveSimCountries');
 
@@ -158,10 +158,19 @@ test('sidepanel loads SMS country lists silently during startup fallback', () =>
   assert.match(fiveSimLoader, /const preferFallbackOnly = Boolean\(options\?\.preferFallbackOnly\)/);
   assert.doesNotMatch(heroLoader, /console\.(?:warn|error)\('加载 (?:5sim|HeroSMS) 国家列表失败：'/);
   assert.doesNotMatch(fiveSimLoader, /console\.(?:warn|error)\('加载 5sim 国家列表失败：'/);
-  assert.match(sidepanelSource, /loadHeroSmsCountries\(\{ silent: true, preferFallbackOnly: true \}\)/);
-  assert.match(sidepanelSource, /loadFiveSimCountries\(\{ silent: true, preferFallbackOnly: true \}\)/);
+  assert.doesNotMatch(sidepanelSource, /loadHeroSmsCountries\(\{ silent: true, preferFallbackOnly: true \}\)/);
+  assert.doesNotMatch(sidepanelSource, /loadFiveSimCountries\(\{ silent: true, preferFallbackOnly: true \}\)/);
+  assert.match(sidepanelSource, /loadHeroSmsCountries\(\{ silent: true \}\)/);
+  assert.match(sidepanelSource, /loadFiveSimCountries\(\{ silent: true \}\)/);
   assert.match(sidepanelSource, /await loadHeroSmsCountries\(\{ silent: true \}\);/);
   assert.doesNotMatch(sidepanelSource, /console\.error\('加载 (?:HeroSMS|5sim|NexSMS) 国家列表失败：'/);
+});
+
+test('built-in SMS country fallback includes Brazil and Egypt', () => {
+  assert.match(sidepanelSource, /\{ id: 73, chn: '巴西', eng: 'Brazil' \}/);
+  assert.match(sidepanelSource, /\{ id: 21, chn: '埃及', eng: 'Egypt' \}/);
+  assert.match(sidepanelSource, /\{ id: 'brazil', chn: '巴西', eng: 'Brazil', searchText: 'brazil 巴西 Brazil BR \+55' \}/);
+  assert.match(sidepanelSource, /\{ id: 'egypt', chn: '埃及', eng: 'Egypt', searchText: 'egypt 埃及 Egypt EG \+20' \}/);
 });
 
 test('HeroSMS country parser accepts keyed country maps from the live API', () => {

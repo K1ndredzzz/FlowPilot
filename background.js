@@ -705,18 +705,20 @@ const HERO_SMS_ACQUIRE_PRIORITY_PRICE_HIGH = 'price_high';
 const DEFAULT_HERO_SMS_ACQUIRE_PRIORITY = HERO_SMS_ACQUIRE_PRIORITY_COUNTRY;
 const FIVE_SIM_COUNTRY_ID = 'vietnam';
 const FIVE_SIM_COUNTRY_LABEL = '越南 (Vietnam)';
-const FIVE_SIM_SUPPORTED_COUNTRY_IDS = ['indonesia', 'thailand', 'vietnam'];
+const FIVE_SIM_SUPPORTED_COUNTRY_IDS = ['indonesia', 'thailand', 'brazil', 'egypt', 'vietnam'];
 const FIVE_SIM_SUPPORTED_COUNTRY_ID_SET = new Set(FIVE_SIM_SUPPORTED_COUNTRY_IDS);
-const HERO_SMS_SUPPORTED_COUNTRY_IDS = [6, 52, 187, 16, 151, 43, 73, 10];
+const HERO_SMS_SUPPORTED_COUNTRY_IDS = [6, 52, 73, 21, 187, 16, 182, 43, 78, 10];
 const HERO_SMS_SUPPORTED_COUNTRY_ID_SET = new Set(HERO_SMS_SUPPORTED_COUNTRY_IDS.map(String));
 const HERO_SMS_COUNTRY_BY_PHONE_PREFIX = Object.freeze([
   { prefix: '84', id: 10, label: 'Vietnam' },
   { prefix: '66', id: 52, label: 'Thailand' },
   { prefix: '62', id: 6, label: 'Indonesia' },
   { prefix: '44', id: 16, label: 'United Kingdom' },
-  { prefix: '81', id: 151, label: 'Japan' },
+  { prefix: '81', id: 182, label: 'Japan' },
   { prefix: '49', id: 43, label: 'Germany' },
-  { prefix: '33', id: 73, label: 'France' },
+  { prefix: '33', id: 78, label: 'France' },
+  { prefix: '55', id: 73, label: 'Brazil' },
+  { prefix: '20', id: 21, label: 'Egypt' },
   { prefix: '1', id: 187, label: 'USA' },
 ]);
 const FIVE_SIM_OPERATOR = DEFAULT_FIVE_SIM_OPERATOR;

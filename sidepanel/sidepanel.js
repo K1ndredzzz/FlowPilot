@@ -659,11 +659,13 @@ const DEFAULT_HERO_SMS_ACQUIRE_PRIORITY = HERO_SMS_ACQUIRE_PRIORITY_COUNTRY;
 const HERO_SMS_SUPPORTED_COUNTRY_ITEMS = Object.freeze([
   { id: 6, chn: '印度尼西亚', eng: 'Indonesia' },
   { id: 52, chn: '泰国', eng: 'Thailand' },
+  { id: 73, chn: '巴西', eng: 'Brazil' },
+  { id: 21, chn: '埃及', eng: 'Egypt' },
   { id: 187, chn: '美国（物理)', eng: 'USA' },
   { id: 16, chn: '英国', eng: 'United Kingdom' },
-  { id: 151, chn: '日本', eng: 'Japan' },
+  { id: 182, chn: '日本', eng: 'Japan' },
   { id: 43, chn: '德国', eng: 'Germany' },
-  { id: 73, chn: '法国', eng: 'France' },
+  { id: 78, chn: '法国', eng: 'France' },
   { id: 10, chn: '越南', eng: 'Vietnam' },
 ]);
 const HERO_SMS_SUPPORTED_COUNTRY_ID_SET = new Set(HERO_SMS_SUPPORTED_COUNTRY_ITEMS.map((item) => String(item.id)));
@@ -1070,6 +1072,8 @@ const DEFAULT_FIVE_SIM_COUNTRY_LABEL = '越南 (Vietnam)';
 const FIVE_SIM_SUPPORTED_COUNTRY_ITEMS = Object.freeze([
   { id: 'indonesia', chn: '印度尼西亚', eng: 'Indonesia', searchText: 'indonesia 印度尼西亚 印尼 Indonesia ID +62' },
   { id: 'thailand', chn: '泰国', eng: 'Thailand', searchText: 'thailand 泰国 Thailand TH +66' },
+  { id: 'brazil', chn: '巴西', eng: 'Brazil', searchText: 'brazil 巴西 Brazil BR +55' },
+  { id: 'egypt', chn: '埃及', eng: 'Egypt', searchText: 'egypt 埃及 Egypt EG +20' },
   { id: 'england', chn: '英国', eng: 'England', searchText: 'england 英国 England UK GB United Kingdom +44' },
   { id: 'usa', chn: '美国', eng: 'United States', searchText: 'usa 美国 United States US +1' },
   { id: 'japan', chn: '日本', eng: 'Japan', searchText: 'japan 日本 Japan JP +81' },
@@ -11000,7 +11004,7 @@ function applySettingsState(state) {
   updatePhoneSmsProviderOrderSummary(restoredPhoneSmsProviderOrder);
   if (previousPhoneSmsProvider !== restoredPhoneSmsProvider) {
     heroSmsCountrySelectionOrder = [];
-    loadHeroSmsCountries({ silent: true, preferFallbackOnly: true }).catch(() => { });
+    loadHeroSmsCountries({ silent: true }).catch(() => { });
   }
   if (inputHeroSmsApiKey) {
     inputHeroSmsApiKey.value = restoredPhoneSmsProvider === PHONE_SMS_PROVIDER_FIVE_SIM
@@ -17608,8 +17612,8 @@ initializeReleaseInfo().catch((err) => {
   console.error('Failed to initialize release info:', err);
 });
 Promise.allSettled([
-  loadHeroSmsCountries({ silent: true, preferFallbackOnly: true }),
-  loadFiveSimCountries({ silent: true, preferFallbackOnly: true }),
+  loadHeroSmsCountries({ silent: true }),
+  loadFiveSimCountries({ silent: true }),
   loadNexSmsCountries(),
 ]).then((results) => {
   const heroResult = results[0];

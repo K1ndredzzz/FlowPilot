@@ -15,6 +15,8 @@
   const SUPPORTED_COUNTRY_ITEMS = Object.freeze([
     { id: 'indonesia', label: '印度尼西亚 (Indonesia)' },
     { id: 'thailand', label: '泰国 (Thailand)' },
+    { id: 'brazil', label: '巴西 (Brazil)' },
+    { id: 'egypt', label: '埃及 (Egypt)' },
     { id: 'england', label: '英国 (England)' },
     { id: 'usa', label: '美国 (United States)' },
     { id: 'japan', label: '日本 (Japan)' },

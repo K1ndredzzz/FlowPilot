@@ -5359,9 +5359,11 @@ test('phone verification helper infers major HeroSMS countries from phone prefix
   const cases = [
     { phoneNumber: '12025550123', countryId: 187, countryLabel: 'USA' },
     { phoneNumber: '447911123456', countryId: 16, countryLabel: 'United Kingdom' },
-    { phoneNumber: '819012345678', countryId: 151, countryLabel: 'Japan' },
+    { phoneNumber: '819012345678', countryId: 182, countryLabel: 'Japan' },
     { phoneNumber: '4915112345678', countryId: 43, countryLabel: 'Germany' },
-    { phoneNumber: '33612345678', countryId: 73, countryLabel: 'France' },
+    { phoneNumber: '33612345678', countryId: 78, countryLabel: 'France' },
+    { phoneNumber: '5511917097811', countryId: 73, countryLabel: 'Brazil' },
+    { phoneNumber: '201001234567', countryId: 21, countryLabel: 'Egypt' },
     { phoneNumber: '84943328460', countryId: 10, countryLabel: 'Vietnam' },
     { phoneNumber: '66950003333', countryId: 52, countryLabel: 'Thailand' },
     { phoneNumber: '628111111111', countryId: 6, countryLabel: 'Indonesia' },

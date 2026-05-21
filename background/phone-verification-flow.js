@@ -109,9 +109,11 @@
       { prefix: '66', id: 52, label: 'Thailand' },
       { prefix: '62', id: 6, label: 'Indonesia' },
       { prefix: '44', id: 16, label: 'United Kingdom' },
-      { prefix: '81', id: 151, label: 'Japan' },
+      { prefix: '81', id: 182, label: 'Japan' },
       { prefix: '49', id: 43, label: 'Germany' },
-      { prefix: '33', id: 73, label: 'France' },
+      { prefix: '33', id: 78, label: 'France' },
+      { prefix: '55', id: 73, label: 'Brazil' },
+      { prefix: '20', id: 21, label: 'Egypt' },
       { prefix: '1', id: 187, label: 'USA' },
     ]);
     const activationPriceHintsByKey = new Map();
