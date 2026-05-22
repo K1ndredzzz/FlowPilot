@@ -339,7 +339,8 @@ return {
 
   api.setLatestState({ accountContributionEnabled: false });
   const normalPayload = api.collectSettingsPayload();
-  assert.equal(normalPayload.panelMode, 'cpa');
+  assert.equal('panelMode' in normalPayload, false);
+  assert.equal(normalPayload.targetId, 'cpa');
   assert.equal(normalPayload.customPassword, 'Secret123!');
   assert.equal(normalPayload.accountRunHistoryTextEnabled, true);
   assert.equal(normalPayload.accountRunHistoryHelperBaseUrl, 'http://127.0.0.1:17373');

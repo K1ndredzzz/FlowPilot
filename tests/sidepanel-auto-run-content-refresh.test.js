@@ -67,8 +67,7 @@ const latestState = {
   accountContributionEnabled: false,
   activeFlowId: 'openai',
   flowId: 'openai',
-  panelMode: 'cpa',
-  kiroTargetId: 'kiro-rs',
+  targetId: 'cpa',
 };
 const inputAutoSkipFailures = { checked: false };
 const inputContributionNickname = { value: 'tester' };
@@ -79,7 +78,7 @@ const inputAutoDelayMinutes = { value: '30' };
 const btnAutoRun = { disabled: false, innerHTML: '' };
 const inputRunCount = { disabled: false };
 const selectFlow = { value: latestState.activeFlowId };
-const selectPanelMode = { value: latestState.panelMode };
+const selectPanelMode = { value: latestState.targetId };
 let runCountValue = ${Math.max(1, Number(runCount) || 1)};
 let pendingAutoRunStartTotalRuns = 0;
 let pendingAutoRunStartExpiresAt = 0;
@@ -121,8 +120,8 @@ function getSelectedFlowId(state = latestState) {
 function getSelectedTargetId(flowId = getSelectedFlowId()) {
   return String(
     flowId === 'kiro'
-      ? (selectPanelMode.value || latestState.kiroTargetId || 'kiro-rs')
-      : normalizePanelMode(selectPanelMode.value || latestState.panelMode || 'cpa')
+      ? (selectPanelMode.value || latestState.targetId || 'kiro-rs')
+      : normalizePanelMode(selectPanelMode.value || latestState.targetId || 'cpa')
   ).trim().toLowerCase() || (flowId === 'kiro' ? 'kiro-rs' : 'cpa');
 }
 function shouldOfferAutoModeChoice() { return false; }
@@ -239,7 +238,7 @@ test('startAutoRunFromCurrentSettings sends current flow selection with auto run
       selectPanelMode.value = 'kiro-rs';
       latestState.activeFlowId = 'openai';
       latestState.flowId = 'openai';
-      latestState.kiroTargetId = 'kiro-rs';
+      latestState.targetId = 'kiro-rs';
       events.push({ type: 'flow-switch-race' });
     }`,
   });
@@ -264,7 +263,7 @@ test('startAutoRunFromCurrentSettings blocks when shared flow capability validat
 const events = [];
 const latestState = {
   activeFlowId: 'site-a',
-  panelMode: 'cpa',
+  targetId: 'cpa',
   signupMethod: 'phone',
   accountContributionEnabled: false,
   phoneVerificationEnabled: true,

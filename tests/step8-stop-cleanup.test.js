@@ -2,7 +2,7 @@
 const fs = require('fs');
 
 const helperSource = fs.readFileSync('background.js', 'utf8');
-const step8ModuleSource = fs.readFileSync('background/steps/confirm-oauth.js', 'utf8');
+const step8ModuleSource = fs.readFileSync('flows/openai/background/steps/confirm-oauth.js', 'utf8');
 
 function extractFunction(source, name) {
   const markers = [`async function ${name}(`, `function ${name}(`];
@@ -178,11 +178,11 @@ async function isTabAlive() {
 }
 async function ensureStep8SignupPageReady() {}
 async function prepareStep8DebuggerClick() {
-  sentMessages.push({ source: 'signup-page', type: 'STEP8_FIND_AND_CLICK' });
+  sentMessages.push({ source: 'openai-auth', type: 'STEP8_FIND_AND_CLICK' });
   return { rect: { centerX: 10, centerY: 20 } };
 }
 async function triggerStep8ContentStrategy() {
-  sentMessages.push({ source: 'signup-page', type: 'STEP8_TRIGGER_CONTINUE' });
+  sentMessages.push({ source: 'openai-auth', type: 'STEP8_TRIGGER_CONTINUE' });
 }
 async function waitForStep8ClickEffect() {
   return { progressed: false, reason: 'no_effect' };

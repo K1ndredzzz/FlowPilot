@@ -249,6 +249,66 @@ return {
   assert.equal(api.rows.rowPlusHostedCheckoutOauthDelay.style.display, 'none');
 });
 
+test('sidepanel Plus UI supports no-payment mode without payment-specific rows', () => {
+  const bundle = [
+    extractFunction('normalizePlusPaymentMethod'),
+    extractFunction('normalizePlusAccountAccessStrategy'),
+    extractFunction('getSelectedPlusPaymentMethod'),
+    extractFunction('getRequestedPlusAccountAccessStrategy'),
+    extractFunction('normalizeGpcHelperPhoneModeValue'),
+    extractFunction('getGpcHelperAutoModeEnabled'),
+    extractFunction('normalizeGpcAutoModePermissionValue'),
+    extractFunction('getGpcAutoModePermissionFromPayload'),
+    extractFunction('shouldPreserveSelectedGpcAutoMode'),
+    extractFunction('hasGpcAutoModePermissionField'),
+    extractFunction('isGpcAutoModePermissionDenied'),
+    extractFunction('normalizeGpcOtpChannelValue'),
+    extractFunction('updatePlusModeUI'),
+  ].join('\n');
+
+  const api = new Function(`
+let latestState = { plusPaymentMethod: 'none' };
+let currentPlusPaymentMethod = 'none';
+let currentPlusAccountAccessStrategy = 'sub2api_codex_session';
+const inputPlusModeEnabled = { checked: true };
+const selectPlusPaymentMethod = { value: 'none', style: { display: 'none' } };
+const GPC_HELPER_PHONE_MODE_AUTO = 'auto';
+const GPC_HELPER_PHONE_MODE_MANUAL = 'manual';
+const PLUS_PAYMENT_METHOD_NONE = 'none';
+const PLUS_ACCOUNT_ACCESS_STRATEGY_OAUTH = 'oauth';
+const PLUS_ACCOUNT_ACCESS_STRATEGY_SUB2API_CODEX_SESSION = 'sub2api_codex_session';
+const PLUS_ACCOUNT_ACCESS_STRATEGY_CPA_CODEX_SESSION = 'cpa_codex_session';
+const DEFAULT_PLUS_ACCOUNT_ACCESS_STRATEGY = PLUS_ACCOUNT_ACCESS_STRATEGY_OAUTH;
+const plusPaymentMethodCaption = { textContent: '' };
+const rowPayPalAccount = { style: { display: '' } };
+const rowHostedCheckoutVerificationUrl = { style: { display: '' } };
+const rowHostedCheckoutPhone = { style: { display: '' } };
+const rowPlusHostedCheckoutOauthDelay = { style: { display: '' } };
+const rowGoPayPhone = { style: { display: '' } };
+const rowGpcHelperApi = { style: { display: '' } };
+${bundle}
+return {
+  updatePlusModeUI,
+  plusPaymentMethodCaption,
+  rows: {
+    rowPayPalAccount,
+    rowHostedCheckoutVerificationUrl,
+    rowHostedCheckoutPhone,
+    rowPlusHostedCheckoutOauthDelay,
+    rowGoPayPhone,
+    rowGpcHelperApi,
+  },
+};
+`)();
+
+  api.updatePlusModeUI();
+
+  assert.match(api.plusPaymentMethodCaption.textContent, /无需配置支付链路/);
+  Object.values(api.rows).forEach((row) => {
+    assert.equal(row.style.display, 'none');
+  });
+});
+
 test('sidepanel Plus UI can hide Plus controls when the shared flow capability registry disables them', () => {
   const bundle = [
     extractFunction('normalizePlusPaymentMethod'),

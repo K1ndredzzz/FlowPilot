@@ -311,10 +311,10 @@ async function runAutoSequenceFromStep() {
       10: 'completed',
     }),
     tabRegistry: {
-      'signup-page': { tabId: 88, ready: true },
+      'openai-auth': { tabId: 88, ready: true },
     },
     sourceLastUrls: {
-      'signup-page': 'https://auth.openai.com/authorize',
+      'openai-auth': 'https://auth.openai.com/authorize',
     },
   };
 }

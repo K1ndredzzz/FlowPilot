@@ -4587,7 +4587,7 @@
           visibleStep,
           logStepKey: 'phone-verification',
         });
-        const result = await sendToContentScriptResilient('signup-page', {
+        const result = await sendToContentScriptResilient('openai-auth', {
           type: 'STEP8_GET_STATE',
           source: 'background',
           payload: { visibleStep },
@@ -4678,7 +4678,7 @@
       const timeoutMs = typeof getOAuthFlowStepTimeoutMs === 'function'
         ? await getOAuthFlowStepTimeoutMs(30000, { step: visibleStep, actionLabel: '提交添加手机号' })
         : 30000;
-      const result = await sendToContentScriptResilient('signup-page', {
+      const result = await sendToContentScriptResilient('openai-auth', {
         type: 'SUBMIT_PHONE_NUMBER',
         source: 'background',
         payload: {
@@ -4725,7 +4725,7 @@
       const timeoutMs = typeof getOAuthFlowStepTimeoutMs === 'function'
         ? await getOAuthFlowStepTimeoutMs(45000, { step: visibleStep, actionLabel: '提交手机验证码' })
         : 45000;
-      const result = await sendToContentScriptResilient('signup-page', {
+      const result = await sendToContentScriptResilient('openai-auth', {
         type: 'SUBMIT_PHONE_VERIFICATION_CODE',
         source: 'background',
         payload: {
@@ -4758,7 +4758,7 @@
       const timeoutMs = typeof getOAuthFlowStepTimeoutMs === 'function'
         ? await getOAuthFlowStepTimeoutMs(65000, { step: visibleStep, actionLabel: 'resend phone verification code' })
         : 65000;
-      const result = await sendToContentScriptResilient('signup-page', {
+      const result = await sendToContentScriptResilient('openai-auth', {
         type: 'RESEND_PHONE_VERIFICATION_CODE',
         source: 'background',
         payload: options || {},
@@ -4782,7 +4782,7 @@
       const timeoutMs = typeof getOAuthFlowStepTimeoutMs === 'function'
         ? await getOAuthFlowStepTimeoutMs(45000, { step: visibleStep, actionLabel: '提交注册手机验证码' })
         : 45000;
-      const result = await sendToContentScriptResilient('signup-page', {
+      const result = await sendToContentScriptResilient('openai-auth', {
         type: 'SUBMIT_PHONE_VERIFICATION_CODE',
         step: visibleStep,
         source: 'background',
@@ -4811,7 +4811,7 @@
       const timeoutMs = typeof getOAuthFlowStepTimeoutMs === 'function'
         ? await getOAuthFlowStepTimeoutMs(65000, { step: visibleStep, actionLabel: '重新发送注册手机验证码' })
         : 65000;
-      const result = await sendToContentScriptResilient('signup-page', {
+      const result = await sendToContentScriptResilient('openai-auth', {
         type: 'RESEND_VERIFICATION_CODE',
         step: visibleStep,
         source: 'background',
@@ -4836,7 +4836,7 @@
       const timeoutMs = typeof getOAuthFlowStepTimeoutMs === 'function'
         ? await getOAuthFlowStepTimeoutMs(30000, { step: visibleStep, actionLabel: 'return to add-phone page' })
         : 30000;
-      const result = await sendToContentScriptResilient('signup-page', {
+      const result = await sendToContentScriptResilient('openai-auth', {
         type: 'RETURN_TO_ADD_PHONE',
         source: 'background',
         payload: {},
@@ -4865,7 +4865,7 @@
       }
       const visibleStep = normalizeLogStep(activePhoneVerificationLogStep) || 9;
       try {
-        const result = await sendToContentScriptResilient('signup-page', {
+        const result = await sendToContentScriptResilient('openai-auth', {
           type: 'CHECK_PHONE_RESEND_ERROR',
           source: 'background',
           payload: { visibleStep },
@@ -6137,7 +6137,7 @@
       const timeoutMs = typeof getOAuthFlowStepTimeoutMs === 'function'
         ? await getOAuthFlowStepTimeoutMs(45000, { step: visibleStep, actionLabel: '提交登录手机验证码' })
         : 45000;
-      const result = await sendToContentScriptResilient('signup-page', {
+      const result = await sendToContentScriptResilient('openai-auth', {
         type: 'SUBMIT_PHONE_VERIFICATION_CODE',
         step: visibleStep,
         source: 'background',
@@ -6166,7 +6166,7 @@
       const timeoutMs = typeof getOAuthFlowStepTimeoutMs === 'function'
         ? await getOAuthFlowStepTimeoutMs(65000, { step: visibleStep, actionLabel: '重新发送登录手机验证码' })
         : 65000;
-      const result = await sendToContentScriptResilient('signup-page', {
+      const result = await sendToContentScriptResilient('openai-auth', {
         type: 'RESEND_VERIFICATION_CODE',
         step: visibleStep,
         source: 'background',

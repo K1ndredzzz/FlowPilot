@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 
 <head>
@@ -315,6 +315,7 @@
         <span class="data-label">Plus 支付</span>
         <div class="data-inline">
           <select id="select-plus-payment-method" class="data-select">
+            <option value="none">无需支付</option>
             <option value="paypal-hosted">PayPal 无卡直绑</option>
             <option value="paypal">PayPal</option>
             <!--
@@ -1865,10 +1866,15 @@
   <script src="../hotmail-utils.js"></script>
   <script src="../luckmail-utils.js"></script>
   <script src="../yyds-mail-utils.js"></script>
-  <script src="../shared/flow-registry.js"></script>
+  <script src="../flows/openai/index.js"></script>
+  <script src="../flows/openai/workflow.js"></script>
+  <script src="../flows/kiro/index.js"></script>
+  <script src="../flows/kiro/workflow.js"></script>
+  <script src="../flows/index.js"></script>
+  <script src="../core/flow-kernel/flow-registry.js"></script>
   <script src="../shared/contribution-registry.js"></script>
-  <script src="../shared/settings-schema.js"></script>
-  <script src="../shared/flow-capabilities.js"></script>
+  <script src="../core/flow-kernel/settings-schema.js"></script>
+  <script src="../core/flow-kernel/flow-capabilities.js"></script>
   <script src="../data/step-definitions.js"></script>
   <script src="update-service.js"></script>
   <script src="contribution-content-update-service.js"></script>

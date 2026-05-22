@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const source = fs.readFileSync('content/kiro/register-page.js', 'utf8');
+const source = fs.readFileSync('flows/kiro/content/register-page.js', 'utf8');
 
 function createTextNode(textContent = '') {
   return { textContent };

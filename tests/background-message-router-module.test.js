@@ -461,7 +461,7 @@ test('SAVE_SETTING rebuilds Plus node statuses when panel mode forces the effect
   const api = new Function('self', `${source}; return self.MultiPageBackgroundMessageRouter;`)(globalScope);
   const broadcasts = [];
   let state = {
-    panelMode: 'sub2api',
+    targetId: 'sub2api',
     plusModeEnabled: true,
     plusPaymentMethod: 'paypal',
     plusAccountAccessStrategy: 'sub2api_codex_session',
@@ -488,12 +488,12 @@ test('SAVE_SETTING rebuilds Plus node statuses when panel mode forces the effect
   const router = api.createMessageRouter({
     addLog: async () => {},
     buildLuckmailSessionSettingsPayload: () => ({}),
-    buildPersistentSettingsPayload: (input = {}) => Object.prototype.hasOwnProperty.call(input, 'panelMode')
-      ? { panelMode: input.panelMode }
+    buildPersistentSettingsPayload: (input = {}) => Object.prototype.hasOwnProperty.call(input, 'targetId')
+      ? { targetId: input.targetId }
       : {},
     broadcastDataUpdate: (payload) => broadcasts.push(payload),
     getNodeIdsForState: (nextState = {}) => (
-      String(nextState.panelMode || '').trim() === 'sub2api'
+      String(nextState.targetId || '').trim() === 'sub2api'
       && String(nextState.plusAccountAccessStrategy || '').trim() === 'sub2api_codex_session'
         ? [
           'open-chatgpt',
@@ -527,12 +527,12 @@ test('SAVE_SETTING rebuilds Plus node statuses when panel mode forces the effect
   const response = await router.handleMessage({
     type: 'SAVE_SETTING',
     payload: {
-      panelMode: 'cpa',
+      targetId: 'cpa',
     },
   });
 
   assert.equal(response.ok, true);
-  assert.equal(state.panelMode, 'cpa');
+  assert.equal(state.targetId, 'cpa');
   assert.equal(state.plusAccountAccessStrategy, 'sub2api_codex_session');
   assert.equal(state.currentNodeId, '');
   assert.equal(state.oauthUrl, null);
@@ -554,7 +554,7 @@ test('SAVE_SETTING rebuilds Plus node statuses when panel mode forces the effect
   });
   assert.equal(Object.prototype.hasOwnProperty.call(state.nodeStatuses, 'sub2api-session-import'), false);
   assert.deepStrictEqual(broadcasts.at(-1), {
-    panelMode: 'cpa',
+    targetId: 'cpa',
     signupMethod: 'email',
     oauthUrl: null,
     localhostUrl: null,
@@ -597,7 +597,7 @@ test('SAVE_SETTING mirrors activeFlowId into flowId when switching to kiro flow'
   const globalScope = { console };
   const api = new Function('self', `${source}; return self.MultiPageBackgroundMessageRouter;`)(globalScope);
   const broadcasts = [];
-  let state = { activeFlowId: 'openai', flowId: 'openai', panelMode: 'cpa', plusModeEnabled: false, plusPaymentMethod: 'paypal' };
+  let state = { activeFlowId: 'openai', flowId: 'openai', targetId: 'cpa', plusModeEnabled: false, plusPaymentMethod: 'paypal' };
 
   const router = api.createMessageRouter({
     addLog: async () => {},
@@ -685,7 +685,7 @@ test('SAVE_SETTING syncs canonical kiro settingsState back into session state', 
   let state = {
     activeFlowId: 'kiro',
     flowId: 'kiro',
-    kiroTargetId: 'kiro-rs',
+    targetId: 'kiro-rs',
     kiroRsUrl: 'https://kiro.example.com/admin',
     kiroRsKey: '',
     settingsSchemaVersion: 4,
@@ -720,7 +720,7 @@ test('SAVE_SETTING syncs canonical kiro settingsState back into session state', 
     setPersistentSettings: async () => ({
       activeFlowId: 'kiro',
       flowId: 'kiro',
-      kiroTargetId: 'kiro-rs',
+      targetId: 'kiro-rs',
       kiroRsUrl: 'https://kiro.example.com/admin',
       kiroRsKey: 'live-key',
       settingsSchemaVersion: 4,
@@ -753,7 +753,7 @@ test('CHECK_KIRO_RS_CONNECTION prefers current sidepanel payload over stale save
     getState: async () => ({
       activeFlowId: 'kiro',
       flowId: 'kiro',
-      kiroTargetId: 'kiro-rs',
+      targetId: 'kiro-rs',
       kiroRsUrl: 'https://old.example.com/admin',
       kiroRsKey: 'old-key',
       settingsState: {
@@ -810,7 +810,7 @@ test('AUTO_RUN applies current flow selection from payload before starting loop'
   let state = {
     activeFlowId: 'openai',
     flowId: 'openai',
-    panelMode: 'cpa',
+    targetId: 'cpa',
     plusModeEnabled: false,
     plusPaymentMethod: 'paypal',
   };
@@ -831,7 +831,7 @@ test('AUTO_RUN applies current flow selection from payload before starting loop'
       validations.push({
         activeFlowId: validationState?.activeFlowId,
         flowId: validationState?.flowId,
-        kiroTargetId: validationState?.kiroTargetId,
+        targetId: validationState?.targetId,
         optionActiveFlowId: options?.activeFlowId,
       });
       return { ok: true, errors: [] };
@@ -850,14 +850,14 @@ test('AUTO_RUN applies current flow selection from payload before starting loop'
   assert.equal(response.ok, true);
   assert.equal(state.activeFlowId, 'kiro');
   assert.equal(state.flowId, 'kiro');
-  assert.equal(state.kiroTargetId, 'kiro-rs');
+  assert.equal(state.targetId, 'kiro-rs');
   assert.deepStrictEqual(calls, [
     {
       type: 'setState',
       updates: {
         activeFlowId: 'kiro',
         flowId: 'kiro',
-        kiroTargetId: 'kiro-rs',
+        targetId: 'kiro-rs',
       },
     },
     {
@@ -879,7 +879,7 @@ test('AUTO_RUN applies current flow selection from payload before starting loop'
     {
       activeFlowId: 'kiro',
       flowId: 'kiro',
-      kiroTargetId: 'kiro-rs',
+      targetId: 'kiro-rs',
       optionActiveFlowId: 'kiro',
     },
   ]);
@@ -893,18 +893,18 @@ test('SAVE_SETTING re-resolves signup method when panel mode changes', async () 
     signupMethod: 'phone',
     phoneVerificationEnabled: true,
     plusModeEnabled: false,
-    panelMode: 'sub2api',
+    targetId: 'sub2api',
   };
 
   const router = api.createMessageRouter({
     addLog: async () => {},
     buildLuckmailSessionSettingsPayload: () => ({}),
-    buildPersistentSettingsPayload: (input = {}) => Object.prototype.hasOwnProperty.call(input, 'panelMode')
-      ? { panelMode: input.panelMode }
+    buildPersistentSettingsPayload: (input = {}) => Object.prototype.hasOwnProperty.call(input, 'targetId')
+      ? { targetId: input.targetId }
       : {},
     broadcastDataUpdate: () => {},
     getState: async () => ({ ...state }),
-    resolveSignupMethod: (nextState = {}) => nextState.panelMode === 'cpa' ? 'email' : 'phone',
+    resolveSignupMethod: (nextState = {}) => nextState.targetId === 'cpa' ? 'email' : 'phone',
     setPersistentSettings: async (updates) => ({ ...updates }),
     setState: async (updates) => {
       state = { ...state, ...updates };
@@ -913,11 +913,11 @@ test('SAVE_SETTING re-resolves signup method when panel mode changes', async () 
 
   const response = await router.handleMessage({
     type: 'SAVE_SETTING',
-    payload: { panelMode: 'cpa' },
+    payload: { targetId: 'cpa' },
   });
 
   assert.equal(response.ok, true);
-  assert.equal(state.panelMode, 'cpa');
+  assert.equal(state.targetId, 'cpa');
   assert.equal(state.signupMethod, 'email');
 });
 
@@ -931,7 +931,7 @@ test('SAVE_SETTING applies shared mode-switch normalization before persisting in
     signupMethod: 'email',
     phoneVerificationEnabled: false,
     plusModeEnabled: false,
-    panelMode: 'cpa',
+    targetId: 'cpa',
   };
 
   const router = api.createMessageRouter({

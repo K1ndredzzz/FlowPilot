@@ -1,8 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const { readFlowRegistryBundle } = require('./helpers/script-bundles.js');
 
-const flowRegistrySource = fs.readFileSync('shared/flow-registry.js', 'utf8');
+const flowRegistrySource = readFlowRegistryBundle();
 const contributionRegistrySource = fs.readFileSync('shared/contribution-registry.js', 'utf8');
 
 function loadApi() {

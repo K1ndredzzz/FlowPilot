@@ -106,8 +106,7 @@
       return {
         activeFlowId: state.activeFlowId,
         flowId: state.flowId || state.activeFlowId,
-        panelMode: state.panelMode,
-        kiroTargetId: state.kiroTargetId,
+        targetId: state.targetId,
         vpsUrl: state.vpsUrl,
         vpsPassword: state.vpsPassword,
         customPassword: state.customPassword,

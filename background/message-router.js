@@ -40,6 +40,7 @@
       testKiroRsConnection,
       finalizePhoneActivationAfterSuccessfulFlow,
       finalizeStep3Completion,
+      finalizeStep5Completion = null,
       finalizeIcloudAliasAfterSuccessfulFlow,
       findHotmailAccount,
       findPayPalAccount,
@@ -91,7 +92,7 @@
         }
         return capabilityRegistry.validateAutoRunStart({
           activeFlowId: options?.activeFlowId ?? validationState?.activeFlowId,
-          panelMode: options?.panelMode ?? validationState?.panelMode,
+          targetId: options?.targetId ?? validationState?.targetId,
           signupMethod: options?.signupMethod ?? validationState?.signupMethod,
           state: validationState,
         });
@@ -113,7 +114,7 @@
         return capabilityRegistry.validateModeSwitch({
           activeFlowId: options?.activeFlowId ?? validationState?.activeFlowId,
           changedKeys: options?.changedKeys,
-          panelMode: options?.panelMode ?? validationState?.panelMode,
+          targetId: options?.targetId ?? validationState?.targetId,
           signupMethod: options?.signupMethod ?? validationState?.signupMethod,
           state: validationState,
         });
@@ -217,10 +218,6 @@
       return String(targetId || fallbackSourceId).trim().toLowerCase() || fallbackSourceId;
     }
 
-    function mapAutoRunTargetIdToPanelMode(targetId = '', fallback = 'cpa') {
-      return String(targetId || fallback || 'cpa').trim().toLowerCase() || 'cpa';
-    }
-
     function buildAutoRunFlowStateUpdates(payload = {}) {
       const hasActiveFlowId = Object.prototype.hasOwnProperty.call(payload, 'activeFlowId');
       const hasTargetId = Object.prototype.hasOwnProperty.call(payload, 'targetId');
@@ -233,11 +230,11 @@
         flowId: activeFlowId,
       };
       if (hasTargetId) {
-        if (activeFlowId === 'kiro') {
-          updates.kiroTargetId = normalizeMessageTargetId('kiro', payload.targetId, 'kiro-rs');
-        } else {
-          updates.panelMode = mapAutoRunTargetIdToPanelMode(payload.targetId, 'cpa');
-        }
+        updates.targetId = normalizeMessageTargetId(
+          activeFlowId,
+          payload.targetId,
+          activeFlowId === 'kiro' ? 'kiro-rs' : 'cpa'
+        );
       }
       return updates;
     }
@@ -297,10 +294,10 @@
       }
 
       const signupTabId = typeof getTabId === 'function'
-        ? await getTabId('signup-page')
+        ? await getTabId('openai-auth')
         : null;
       const signupTabAlive = signupTabId && typeof isTabAlive === 'function'
-        ? await isTabAlive('signup-page')
+        ? await isTabAlive('openai-auth')
         : Boolean(signupTabId);
 
       if (!signupTabId || !signupTabAlive) {
@@ -579,6 +576,12 @@
 
     function normalizePlusPaymentMethodForDisplay(value = '') {
       const normalized = String(value || '').trim().toLowerCase();
+      if (normalized === 'none' || normalized === 'no-payment' || normalized === 'skip-payment') {
+        return 'none';
+      }
+      if (normalized === 'paypal-hosted' || normalized === 'paypal_direct' || normalized === 'paypal-direct') {
+        return 'paypal-hosted';
+      }
       if (normalized === 'gpc-helper') {
         return 'gpc-helper';
       }
@@ -587,6 +590,12 @@
 
     function getPlusPaymentMethodLabel(value = '') {
       const method = normalizePlusPaymentMethodForDisplay(value);
+      if (method === 'none') {
+        return '无需支付';
+      }
+      if (method === 'paypal-hosted') {
+        return 'PayPal 无卡直绑';
+      }
       if (method === 'gpc-helper') {
         return 'GPC';
       }
@@ -999,13 +1008,21 @@
             return { ok: true, error: errorMessage };
           }
 
+          const deferCompletionUntilBackgroundValidation = nodeId === 'fill-profile';
           const completionStateCandidate = await getState();
           const nodeIds = typeof getNodeIdsForState === 'function' ? getNodeIdsForState(completionStateCandidate) : [];
           const lastNodeId = nodeIds[nodeIds.length - 1] || '';
           const isFinalNode = nodeId === lastNodeId;
           const completionState = isFinalNode ? completionStateCandidate : null;
-          await setNodeStatus(nodeId, 'completed');
-          await addLog('已完成', 'ok', { nodeId });
+          if (!deferCompletionUntilBackgroundValidation) {
+            await setNodeStatus(nodeId, 'completed');
+            await addLog('已完成', 'ok', { nodeId });
+          } else {
+            await addLog('步骤 5：已收到资料页完成信号，等待后台最终复核后再标记完成。', 'info', {
+              step: 5,
+              stepKey: nodeId,
+            });
+          }
           await handleStepData(resolvedStep, message.payload);
           if (isFinalNode && typeof appendAccountRunRecord === 'function') {
             await appendAccountRunRecord('success', completionState);
@@ -1276,7 +1293,10 @@
           }
           const executionState = await getState();
           if (doesNodeUseCompletionSignal(nodeId, executionState)) {
-            await executeNodeViaCompletionSignal(nodeId);
+            const completionPayload = await executeNodeViaCompletionSignal(nodeId);
+            if (nodeId === 'fill-profile' && typeof finalizeStep5Completion === 'function') {
+              await finalizeStep5Completion(completionPayload || {});
+            }
           } else {
             await executeNode(nodeId);
           }
@@ -1309,7 +1329,7 @@
           const state = await getState();
           const autoRunStartValidation = validateAutoRunStart(state, {
             activeFlowId: autoRunFlowStateUpdates.activeFlowId ?? state?.activeFlowId,
-            panelMode: autoRunFlowStateUpdates.panelMode ?? state?.panelMode,
+            targetId: autoRunFlowStateUpdates.targetId ?? state?.targetId,
             state,
           });
           if (autoRunStartValidation?.ok === false) {
@@ -1352,7 +1372,7 @@
           const state = await getState();
           const autoRunStartValidation = validateAutoRunStart(state, {
             activeFlowId: autoRunFlowStateUpdates.activeFlowId ?? state?.activeFlowId,
-            panelMode: autoRunFlowStateUpdates.panelMode ?? state?.panelMode,
+            targetId: autoRunFlowStateUpdates.targetId ?? state?.targetId,
             state,
           });
           if (autoRunStartValidation?.ok === false) {
@@ -1451,7 +1471,7 @@
             Object.prototype.hasOwnProperty.call(updates, 'phoneVerificationEnabled')
             || Object.prototype.hasOwnProperty.call(updates, 'plusModeEnabled')
             || Object.prototype.hasOwnProperty.call(updates, 'signupMethod')
-            || Object.prototype.hasOwnProperty.call(updates, 'panelMode')
+            || Object.prototype.hasOwnProperty.call(updates, 'targetId')
             || Object.prototype.hasOwnProperty.call(updates, 'activeFlowId')
             || Object.prototype.hasOwnProperty.call(updates, 'accountContributionEnabled')
           ) {
@@ -1600,10 +1620,8 @@
             );
             const selectedPlusAccountAccessStrategy = getPlusAccountAccessStrategyLabel(
               stateUpdates.plusAccountAccessStrategy ?? currentState?.plusAccountAccessStrategy ?? 'oauth',
-              stateUpdates.panelMode
-                ?? currentState?.panelMode
-                ?? stateUpdates.openaiIntegrationTargetId
-                ?? currentState?.openaiIntegrationTargetId
+              stateUpdates.targetId
+                ?? currentState?.targetId
                 ?? 'cpa'
             );
             await addLog(
@@ -1620,10 +1638,8 @@
           } else if (plusAccountAccessStrategyChanged && nextPlusModeEnabled) {
             const selectedPlusAccountAccessStrategy = getPlusAccountAccessStrategyLabel(
               stateUpdates.plusAccountAccessStrategy ?? currentState?.plusAccountAccessStrategy ?? 'oauth',
-              stateUpdates.panelMode
-                ?? currentState?.panelMode
-                ?? stateUpdates.openaiIntegrationTargetId
-                ?? currentState?.openaiIntegrationTargetId
+              stateUpdates.targetId
+                ?? currentState?.targetId
                 ?? 'cpa'
             );
             await addLog(`Plus 账号接入策略已切换为 ${selectedPlusAccountAccessStrategy}，已更新对应的 Plus 尾链。`, 'info');
@@ -1661,7 +1677,7 @@
           );
           const targetId = normalizeMessageTargetId(
             activeFlowId,
-            message.payload?.targetId || currentState?.kiroTargetId || 'kiro-rs',
+            message.payload?.targetId || currentState?.targetId || 'kiro-rs',
             'kiro-rs'
           );
           const nestedTargetConfig = currentState?.settingsState?.flows?.kiro?.targets?.[targetId]

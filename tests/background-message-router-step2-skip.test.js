@@ -111,12 +111,12 @@ function createRouter(overrides = {}) {
     deleteIcloudAlias: async () => {},
     deleteUsedIcloudAliases: async () => {},
     disableUsedLuckmailPurchases: async () => {},
-    doesNodeUseCompletionSignal: () => false,
+    doesNodeUseCompletionSignal: overrides.doesNodeUseCompletionSignal || (() => false),
     ensureManualInteractionAllowed: async () => ({}),
     executeNode: async (nodeId) => {
       events.executedSteps.push(getStepForNode(nodeId) || nodeId);
     },
-    executeNodeViaCompletionSignal: async () => {},
+    executeNodeViaCompletionSignal: overrides.executeNodeViaCompletionSignal || (async () => ({})),
     exportSettingsBundle: async () => ({}),
     fetchGeneratedEmail: async () => '',
     finalizePhoneActivationAfterSuccessfulFlow: overrides.finalizePhoneActivationAfterSuccessfulFlow || (async (state) => {
@@ -125,6 +125,7 @@ function createRouter(overrides = {}) {
     finalizeStep3Completion: overrides.finalizeStep3Completion || (async (payload) => {
       events.finalizePayloads.push(payload);
     }),
+    finalizeStep5Completion: overrides.finalizeStep5Completion,
     finalizeIcloudAliasAfterSuccessfulFlow: overrides.finalizeIcloudAliasAfterSuccessfulFlow || (async () => {}),
     findHotmailAccount: async () => null,
     flushCommand: async () => {},
@@ -426,7 +427,7 @@ test('message router finalizes step 3 before marking it completed', async () => 
   const response = await router.handleMessage({
     type: 'NODE_COMPLETE',
     nodeId: 'fill-password',
-    source: 'signup-page',
+    source: 'openai-auth',
     payload: {
       nodeId: 'fill-password',
       email: 'user@example.com',
@@ -548,7 +549,7 @@ test('message router marks step 3 failed when post-submit finalize fails', async
   const response = await router.handleMessage({
     type: 'NODE_COMPLETE',
     nodeId: 'fill-password',
-    source: 'signup-page',
+    source: 'openai-auth',
     payload: {
       nodeId: 'fill-password',
       email: 'user@example.com',
@@ -581,7 +582,7 @@ test('message router does not duplicate step 3 mismatch failure log after finali
   const response = await router.handleMessage({
     type: 'NODE_ERROR',
     nodeId: 'fill-password',
-    source: 'signup-page',
+    source: 'openai-auth',
     payload: { nodeId: 'fill-password' },
     error: mismatchError,
   }, {});
@@ -604,7 +605,7 @@ test('message router stops the flow and surfaces cloudflare security block error
   const response = await router.handleMessage({
     type: 'NODE_ERROR',
     nodeId: 'oauth-login',
-    source: 'signup-page',
+    source: 'openai-auth',
     payload: { nodeId: 'oauth-login' },
     error: 'CF_SECURITY_BLOCKED::您已触发Cloudflare 安全防护系统',
   }, {});
@@ -751,4 +752,84 @@ test('message router ignores stale step 2 completion while auto-run is already o
   assert.deepStrictEqual(events.notifyCompletions, []);
   assert.deepStrictEqual(events.emailStates, []);
   assert.equal(events.logs.some(({ message }) => /忽略过期的节点 submit-signup-email 完成消息/.test(message)), true);
+});
+
+test('message router defers fill-profile completion status until background validation', async () => {
+  const { router, events } = createRouter({
+    state: {
+      currentNodeId: 'fill-profile',
+      nodeStatuses: {
+        'fill-profile': 'running',
+        'wait-registration-success': 'pending',
+      },
+    },
+  });
+
+  const response = await router.handleMessage({
+    type: 'NODE_COMPLETE',
+    nodeId: 'fill-profile',
+    payload: {
+      nodeId: 'fill-profile',
+      outcome: 'navigation_started',
+      url: 'https://auth.openai.com/about-you',
+      navigationStarted: true,
+    },
+  }, {});
+
+  assert.deepStrictEqual(response, { ok: true });
+  assert.deepStrictEqual(events.stepStatuses, []);
+  assert.deepStrictEqual(events.nodeStatuses, []);
+  assert.deepStrictEqual(events.notifyCompletions, [
+    {
+      step: 5,
+      nodeId: 'fill-profile',
+      payload: {
+        nodeId: 'fill-profile',
+        outcome: 'navigation_started',
+        url: 'https://auth.openai.com/about-you',
+        navigationStarted: true,
+        step: 5,
+      },
+    },
+  ]);
+  assert.equal(events.logs.some(({ message }) => /等待后台最终复核后再标记完成/.test(message)), true);
+});
+
+test('message router finalizes manual fill-profile execution through background validation', async () => {
+  const finalizePayloads = [];
+  const { router } = createRouter({
+    state: {
+      currentNodeId: 'fill-profile',
+      nodeStatuses: {
+        'fill-profile': 'pending',
+      },
+    },
+    executeNodeViaCompletionSignal: async (nodeId) => ({
+      nodeId,
+      outcome: 'logged_in_home',
+      url: 'https://chatgpt.com/',
+    }),
+    doesNodeUseCompletionSignal: (nodeId) => nodeId === 'fill-profile',
+    finalizeStep5Completion: async (payload) => {
+      finalizePayloads.push(payload);
+    },
+  });
+
+  const response = await router.handleMessage({
+    type: 'EXECUTE_NODE',
+    source: 'sidepanel',
+    nodeId: 'fill-profile',
+    payload: {
+      nodeId: 'fill-profile',
+    },
+  }, {});
+
+  assert.deepStrictEqual(response, { ok: true });
+  assert.deepStrictEqual(finalizePayloads, [
+    {
+      nodeId: 'fill-profile',
+      outcome: 'logged_in_home',
+      url: 'https://chatgpt.com/',
+    },
+  ]);
 });

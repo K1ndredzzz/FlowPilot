@@ -170,9 +170,11 @@ return {
     activeFlowId: 'kiro',
     flowId: 'kiro',
     nodeStatuses: { 'open-chatgpt': 'completed' },
+    targetId: 'kiro-rs',
   });
   assert.equal(api.getCalls()[0].activeFlowId, 'kiro');
   assert.equal(api.getCalls()[0].flowId, 'kiro');
+  assert.equal(api.getCalls()[0].targetId, 'kiro-rs');
 });
 
 test('updatePanelModeUI reapplies dynamic Plus and phone visibility after flow group visibility', () => {
@@ -185,7 +187,7 @@ const calls = [];
 let latestState = {
   activeFlowId: 'openai',
   flowId: 'openai',
-  panelMode: 'cpa',
+  targetId: 'cpa',
 };
 const DEFAULT_ACTIVE_FLOW_ID = 'openai';
 const selectFlow = { value: '' };
@@ -220,8 +222,6 @@ function updatePhoneVerificationSettingsUI() {
 function resolveCurrentSidepanelCapabilities() {
   return {
     visibleGroupIds: ['service-account', 'openai-plus', 'openai-phone'],
-    effectivePanelMode: 'cpa',
-    panelMode: 'cpa',
     effectiveTargetId: 'cpa',
   };
 }

@@ -1,11 +1,17 @@
-﻿// background.js — Service Worker: orchestration, state, tab management, message routing
+// background.js — Service Worker: orchestration, state, tab management, message routing
 
 importScripts(
-  'shared/flow-registry.js',
+  'flows/openai/index.js',
+  'flows/openai/workflow.js',
+  'flows/kiro/index.js',
+  'flows/kiro/workflow.js',
+  'flows/index.js',
+  'core/flow-kernel/flow-registry.js',
   'shared/contribution-registry.js',
-  'shared/settings-schema.js',
-  'shared/source-registry.js',
-  'shared/flow-capabilities.js',
+  'core/flow-kernel/settings-schema.js',
+  'imports/legacy/settings-importer.js',
+  'core/flow-kernel/source-registry.js',
+  'core/flow-kernel/flow-capabilities.js',
   'shared/kiro-timeouts.js',
   'managed-alias-utils.js',
   'mail2925-utils.js',
@@ -25,15 +31,15 @@ importScripts(
   'background/cpa-api.js',
   'background/panel-bridge.js',
   'background/registration-email-state.js',
-  'background/workflow-engine.js',
-  'background/runtime-state.js',
-  'background/kiro/state.js',
-  'background/kiro/credential-artifact.js',
+  'core/flow-kernel/workflow-engine.js',
+  'core/flow-kernel/runtime-state.js',
+  'flows/kiro/background/state.js',
+  'flows/kiro/background/credential-artifact.js',
   'background/contribution/adapters/kiro-builder-id.js',
-  'background/kiro/register-runner.js',
-  'background/kiro/desktop-client.js',
-  'background/kiro/desktop-authorize-runner.js',
-  'background/kiro/publisher-kiro-rs.js',
+  'flows/kiro/background/register-runner.js',
+  'flows/kiro/background/desktop-client.js',
+  'flows/kiro/background/desktop-authorize-runner.js',
+  'flows/kiro/background/publisher-kiro-rs.js',
   'background/generated-email-helpers.js',
   'background/signup-flow-helpers.js',
   'background/mail-rule-registry.js',
@@ -41,30 +47,30 @@ importScripts(
   'background/message-router.js',
   'background/verification-flow.js',
   'background/auto-run-controller.js',
-  'background/tab-runtime.js',
+  'core/flow-kernel/tab-runtime.js',
   'background/navigation-utils.js',
-  'background/logging-status.js',
-  'background/steps/registry.js',
+  'core/flow-kernel/logging-status.js',
+  'core/flow-kernel/step-registry.js',
   'data/step-definitions.js',
   'data/address-sources.js',
-  'background/steps/open-chatgpt.js',
-  'background/steps/submit-signup-email.js',
-  'background/steps/fill-password.js',
-  'background/steps/fetch-signup-code.js',
-  'background/steps/fill-profile.js',
-  'background/steps/wait-registration-success.js',
-  'background/steps/create-plus-checkout.js',
-  'background/steps/fill-plus-checkout.js',
-  'background/steps/gopay-manual-confirm.js',
-  'background/steps/paypal-approve.js',
-  'background/steps/gopay-approve.js',
-  'background/steps/plus-return-confirm.js',
-  'background/steps/sub2api-session-import.js',
-  'background/steps/cpa-session-import.js',
-  'background/steps/oauth-login.js',
-  'background/steps/fetch-login-code.js',
-  'background/steps/confirm-oauth.js',
-  'background/steps/platform-verify.js',
+  'flows/openai/background/steps/open-chatgpt.js',
+  'flows/openai/background/steps/submit-signup-email.js',
+  'flows/openai/background/steps/fill-password.js',
+  'flows/openai/background/steps/fetch-signup-code.js',
+  'flows/openai/background/steps/fill-profile.js',
+  'flows/openai/background/steps/wait-registration-success.js',
+  'flows/openai/background/steps/create-plus-checkout.js',
+  'flows/openai/background/steps/fill-plus-checkout.js',
+  'flows/openai/background/steps/gopay-manual-confirm.js',
+  'flows/openai/background/steps/paypal-approve.js',
+  'flows/openai/background/steps/gopay-approve.js',
+  'flows/openai/background/steps/plus-return-confirm.js',
+  'flows/openai/background/steps/sub2api-session-import.js',
+  'flows/openai/background/steps/cpa-session-import.js',
+  'flows/openai/background/steps/oauth-login.js',
+  'flows/openai/background/steps/fetch-login-code.js',
+  'flows/openai/background/steps/confirm-oauth.js',
+  'flows/openai/background/steps/platform-verify.js',
   'data/names.js',
   'hotmail-utils.js',
   'microsoft-email.js',
@@ -498,15 +504,6 @@ function buildStatePatchWithRuntimeState(currentState = {}, updates = {}) {
   if (runtimeStateHelpers?.buildSessionStatePatch) {
     nextPatch = runtimeStateHelpers.buildSessionStatePatch(currentState, nextPatch);
   }
-  if (kiroStateHelpers?.buildSessionStatePatch) {
-    const kiroPatch = kiroStateHelpers.buildSessionStatePatch(currentState, updates);
-    if (kiroPatch && Object.keys(kiroPatch).length > 0) {
-      nextPatch = {
-        ...nextPatch,
-        ...kiroPatch,
-      };
-    }
-  }
   return nextPatch;
 }
 
@@ -724,6 +721,7 @@ const HERO_SMS_COUNTRY_BY_PHONE_PREFIX = Object.freeze([
 const FIVE_SIM_OPERATOR = DEFAULT_FIVE_SIM_OPERATOR;
 const PLUS_PAYMENT_METHOD_PAYPAL = 'paypal';
 const PLUS_PAYMENT_METHOD_PAYPAL_HOSTED = 'paypal-hosted';
+const PLUS_PAYMENT_METHOD_NONE = 'none';
 const PLUS_PAYMENT_METHOD_GOPAY = 'gopay';
 const PLUS_PAYMENT_METHOD_GPC_HELPER = 'gpc-helper';
 const DEFAULT_PLUS_PAYMENT_METHOD = PLUS_PAYMENT_METHOD_PAYPAL_HOSTED;
@@ -828,6 +826,12 @@ function normalizePlusPaymentMethod(value = '') {
   const paypalHostedValue = typeof PLUS_PAYMENT_METHOD_PAYPAL_HOSTED !== 'undefined'
     ? PLUS_PAYMENT_METHOD_PAYPAL_HOSTED
     : 'paypal-hosted';
+  const noneValue = typeof PLUS_PAYMENT_METHOD_NONE !== 'undefined'
+    ? PLUS_PAYMENT_METHOD_NONE
+    : 'none';
+  if (normalized === noneValue || normalized === 'no-payment' || normalized === 'skip-payment') {
+    return noneValue;
+  }
   if (normalized === paypalHostedValue || normalized === 'paypal_direct' || normalized === 'paypal-direct') {
     return paypalHostedValue;
   }
@@ -896,7 +900,7 @@ function buildResolvedStepDefinitionState(state = {}) {
       signupMethod: requestedSignupMethod,
     }, {
       activeFlowId: requestedActiveFlowId,
-      panelMode: state?.panelMode,
+      targetId: state?.targetId,
       signupMethod: requestedSignupMethod,
     })
     : null;
@@ -912,7 +916,6 @@ function buildResolvedStepDefinitionState(state = {}) {
     ...state,
     activeFlowId: resolvedActiveFlowId,
     flowId: resolvedActiveFlowId,
-    panelMode: stepDefinitionOptions.panelMode || capabilityState?.effectivePanelMode || state?.panelMode,
     targetId: stepDefinitionOptions.targetId || capabilityState?.effectiveTargetId || state?.targetId,
     plusModeEnabled: stepDefinitionOptions.plusModeEnabled === undefined
       ? plusModeEnabled
@@ -1055,6 +1058,74 @@ function getAuthChainStartStepId(state = {}) {
   return isPlusModeState(state) ? 10 : FINAL_OAUTH_CHAIN_START_STEP;
 }
 
+function normalizeAuthRecoveryIdentifierType(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'phone' || normalized === 'email' ? normalized : '';
+}
+
+function isPhoneSignupAuthRecoveryState(state = {}) {
+  const signupMethod = String(state?.resolvedSignupMethod || state?.signupMethod || '').trim().toLowerCase();
+  return signupMethod === SIGNUP_METHOD_PHONE || signupMethod === 'phone';
+}
+
+function getPhoneSignupAuthRecoveryIdentity(state = {}) {
+  const accountIdentifierType = normalizeAuthRecoveryIdentifierType(state?.accountIdentifierType);
+  const phoneNumber = String(
+    state?.signupPhoneNumber
+    || state?.signupPhoneCompletedActivation?.phoneNumber
+    || state?.signupPhoneActivation?.phoneNumber
+    || (accountIdentifierType === 'phone' ? state?.accountIdentifier : '')
+    || ''
+  ).trim();
+  if (!phoneNumber) {
+    return null;
+  }
+  return {
+    accountIdentifierType: 'phone',
+    accountIdentifier: phoneNumber,
+    signupPhoneNumber: phoneNumber,
+    signupPhoneCompletedActivation: state?.signupPhoneCompletedActivation || null,
+    signupPhoneActivation: state?.signupPhoneActivation || null,
+  };
+}
+
+function isBoundEmailReloginAuthRecoveryNode(nodeId = '') {
+  return [
+    'relogin-bound-email',
+    'fetch-bound-email-login-code',
+    'post-bound-email-phone-verification',
+  ].includes(String(nodeId || '').trim());
+}
+
+function buildAuthLoginRecoveryState(initialState = {}, authLoginNodeId = 'oauth-login') {
+  const nodeId = String(authLoginNodeId || '').trim() || 'oauth-login';
+  const isBoundEmailRelogin = isBoundEmailReloginAuthRecoveryNode(nodeId);
+  if (isBoundEmailRelogin) {
+    return {
+      ...initialState,
+      authLoginPhase: 'bound-email-relogin',
+    };
+  }
+
+  const phoneIdentity = isPhoneSignupAuthRecoveryState(initialState)
+    ? getPhoneSignupAuthRecoveryIdentity(initialState)
+    : null;
+  if (!phoneIdentity) {
+    return {
+      ...initialState,
+      authLoginPhase: 'primary-login',
+    };
+  }
+
+  return {
+    ...initialState,
+    ...phoneIdentity,
+    authLoginPhase: 'primary-login',
+    forceLoginIdentifierType: 'phone',
+    forceEmailLogin: false,
+  };
+}
+
 function getStepDefinitionForState(step, state = {}) {
   const numericStep = Number(step);
   return getStepDefinitionsForState(state).find((definition) => Number(definition.id) === numericStep) || null;
@@ -1180,9 +1251,8 @@ function setupDeclarativeNetRequestRules() {
 // ============================================================
 
 const PERSISTED_SETTING_DEFAULTS = {
-  panelMode: 'cpa',
+  targetId: 'cpa',
   activeFlowId: DEFAULT_ACTIVE_FLOW_ID,
-  kiroTargetId: 'kiro-rs',
   kiroRsUrl: String(self.MultiPageFlowRegistry?.DEFAULT_KIRO_RS_URL || '').trim(),
   kiroRsKey: '',
   vpsUrl: '',
@@ -1373,9 +1443,7 @@ const PERSISTED_SETTING_KEYS = Object.keys(PERSISTED_SETTING_DEFAULTS);
 const PERSISTED_SETTINGS_SCHEMA_KEYS = ['settingsSchemaVersion', 'settingsState'];
 const SETTINGS_SCHEMA_VIEW_KEYS = Object.freeze([
   'activeFlowId',
-  'openaiIntegrationTargetId',
-  'panelMode',
-  'kiroTargetId',
+  'targetId',
   'vpsUrl',
   'vpsPassword',
   'localCpaStep9Mode',
@@ -1419,7 +1487,6 @@ const DEFAULT_STATE = {
   currentNodeId: '',
   nodeStatuses: { ...DEFAULT_NODE_STATUSES },
   runtimeState: runtimeStateHelpers?.buildDefaultRuntimeState?.() || null,
-  kiroRuntime: kiroStateHelpers?.buildDefaultRuntimeState?.() || null,
   ...CONTRIBUTION_RUNTIME_DEFAULTS,
   accounts: [], // 已生成账号记录：{ email, password, createdAt }。
   accountRunHistory: [], // 账号运行历史快照，实际持久化在 chrome.storage.local。
@@ -1821,7 +1888,7 @@ function resolveCurrentFlowCapabilities(state = {}, options = {}) {
   }
   return registry.resolveSidepanelCapabilities({
     activeFlowId: options?.activeFlowId ?? state?.activeFlowId,
-    panelMode: options?.panelMode ?? state?.panelMode,
+    targetId: options?.targetId ?? state?.targetId,
     signupMethod: options?.signupMethod ?? state?.signupMethod,
     state,
   });
@@ -1834,7 +1901,7 @@ function validateAutoRunStartState(state = {}, options = {}) {
   }
   return registry.validateAutoRunStart({
     activeFlowId: options?.activeFlowId ?? state?.activeFlowId,
-    panelMode: options?.panelMode ?? state?.panelMode,
+    targetId: options?.targetId ?? state?.targetId,
     signupMethod: options?.signupMethod ?? state?.signupMethod,
     state,
   });
@@ -1853,7 +1920,7 @@ function validateModeSwitchState(state = {}, options = {}) {
   return registry.validateModeSwitch({
     activeFlowId: options?.activeFlowId ?? state?.activeFlowId,
     changedKeys: options?.changedKeys,
-    panelMode: options?.panelMode ?? state?.panelMode,
+    targetId: options?.targetId ?? state?.targetId,
     signupMethod: options?.signupMethod ?? state?.signupMethod,
     state,
   });
@@ -1870,7 +1937,7 @@ function canUsePhoneSignup(state = {}) {
       return registry?.resolveSidepanelCapabilities
         ? registry.resolveSidepanelCapabilities({
           activeFlowId: state?.activeFlowId,
-          panelMode: state?.panelMode,
+          targetId: state?.targetId,
           signupMethod: state?.signupMethod,
           state,
         })
@@ -1900,7 +1967,7 @@ function resolveSignupMethod(state = {}) {
       return registry?.resolveSidepanelCapabilities
         ? registry.resolveSidepanelCapabilities({
           activeFlowId: state?.activeFlowId,
-          panelMode: state?.panelMode,
+          targetId: state?.targetId,
           signupMethod: method,
           state,
         })
@@ -1968,6 +2035,12 @@ function normalizePlusPaymentMethod(value = '') {
   const paypalHostedValue = typeof PLUS_PAYMENT_METHOD_PAYPAL_HOSTED !== 'undefined'
     ? PLUS_PAYMENT_METHOD_PAYPAL_HOSTED
     : 'paypal-hosted';
+  const noneValue = typeof PLUS_PAYMENT_METHOD_NONE !== 'undefined'
+    ? PLUS_PAYMENT_METHOD_NONE
+    : 'none';
+  if (normalized === noneValue || normalized === 'no-payment' || normalized === 'skip-payment') {
+    return noneValue;
+  }
   if (normalized === paypalHostedValue || normalized === 'paypal_direct' || normalized === 'paypal-direct') {
     return paypalHostedValue;
   }
@@ -3051,18 +3124,13 @@ function normalizeStepExecutionRangeByFlow(value = {}) {
 
 function normalizePersistentSettingValue(key, value) {
   switch (key) {
-    case 'panelMode':
-      return normalizePanelMode(value);
+    case 'targetId':
+      return String(value || '').trim().toLowerCase();
     case 'activeFlowId':
       if (typeof self.MultiPageFlowRegistry?.normalizeFlowId === 'function') {
         return self.MultiPageFlowRegistry.normalizeFlowId(value, DEFAULT_ACTIVE_FLOW_ID);
       }
       return String(value || '').trim().toLowerCase() === 'kiro' ? 'kiro' : DEFAULT_ACTIVE_FLOW_ID;
-    case 'kiroTargetId':
-      if (typeof self.MultiPageFlowRegistry?.normalizeTargetId === 'function') {
-        return self.MultiPageFlowRegistry.normalizeTargetId('kiro', value, 'kiro-rs');
-      }
-      return String(value || '').trim().toLowerCase() === 'kiro-rs' ? 'kiro-rs' : 'kiro-rs';
     case 'kiroRsUrl':
       return String(value || '').trim();
     case 'kiroRsKey':
@@ -3577,7 +3645,7 @@ function buildPersistentSettingsPayload(input = {}, options = {}) {
   if (Object.prototype.hasOwnProperty.call(payload, 'phoneVerificationEnabled')
     || Object.prototype.hasOwnProperty.call(payload, 'plusModeEnabled')
     || Object.prototype.hasOwnProperty.call(payload, 'signupMethod')
-    || Object.prototype.hasOwnProperty.call(payload, 'panelMode')
+    || Object.prototype.hasOwnProperty.call(payload, 'targetId')
     || Object.prototype.hasOwnProperty.call(payload, 'activeFlowId')) {
     payload.signupMethod = resolveSignupMethod(nextSignupConstraintState);
   }
@@ -3691,6 +3759,13 @@ function mergeSettingsStatePatch(baseValue = {}, patchValue = {}) {
 function buildSettingsStatePatchFromFlatUpdates(updates = {}) {
   const patch = {};
   const hasUpdate = (key) => Object.prototype.hasOwnProperty.call(updates, key);
+  const normalizePatchFlowId = (value = '', fallback = DEFAULT_ACTIVE_FLOW_ID) => {
+    if (typeof self.MultiPageFlowRegistry?.normalizeFlowId === 'function') {
+      return self.MultiPageFlowRegistry.normalizeFlowId(value, fallback);
+    }
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized || String(fallback || DEFAULT_ACTIVE_FLOW_ID).trim().toLowerCase() || DEFAULT_ACTIVE_FLOW_ID;
+  };
   const assignIfUpdated = (key, path) => {
     if (hasUpdate(key)) {
       setSettingsStatePatchValue(patch, path, updates[key]);
@@ -3698,26 +3773,29 @@ function buildSettingsStatePatchFromFlatUpdates(updates = {}) {
   };
 
   assignIfUpdated('activeFlowId', ['activeFlowId']);
-  if (hasUpdate('openaiIntegrationTargetId') || hasUpdate('panelMode')) {
+  if (hasUpdate('selectedTargetId') || hasUpdate('targetId')) {
+    const flowId = normalizePatchFlowId(
+      updates.activeFlowId ?? updates.flowId,
+      DEFAULT_ACTIVE_FLOW_ID
+    );
     setSettingsStatePatchValue(
       patch,
-      ['flows', 'openai', 'integrationTargetId'],
-      hasUpdate('openaiIntegrationTargetId') ? updates.openaiIntegrationTargetId : updates.panelMode
+      ['flows', flowId, 'selectedTargetId'],
+      hasUpdate('selectedTargetId') ? updates.selectedTargetId : updates.targetId
     );
   }
-  assignIfUpdated('kiroTargetId', ['flows', 'kiro', 'targetId']);
-  assignIfUpdated('vpsUrl', ['flows', 'openai', 'integrationTargets', 'cpa', 'vpsUrl']);
-  assignIfUpdated('vpsPassword', ['flows', 'openai', 'integrationTargets', 'cpa', 'vpsPassword']);
-  assignIfUpdated('localCpaStep9Mode', ['flows', 'openai', 'integrationTargets', 'cpa', 'localCpaStep9Mode']);
-  assignIfUpdated('sub2apiUrl', ['flows', 'openai', 'integrationTargets', 'sub2api', 'sub2apiUrl']);
-  assignIfUpdated('sub2apiEmail', ['flows', 'openai', 'integrationTargets', 'sub2api', 'sub2apiEmail']);
-  assignIfUpdated('sub2apiPassword', ['flows', 'openai', 'integrationTargets', 'sub2api', 'sub2apiPassword']);
-  assignIfUpdated('sub2apiGroupName', ['flows', 'openai', 'integrationTargets', 'sub2api', 'sub2apiGroupName']);
-  assignIfUpdated('sub2apiGroupNames', ['flows', 'openai', 'integrationTargets', 'sub2api', 'sub2apiGroupNames']);
-  assignIfUpdated('sub2apiAccountPriority', ['flows', 'openai', 'integrationTargets', 'sub2api', 'sub2apiAccountPriority']);
-  assignIfUpdated('sub2apiDefaultProxyName', ['flows', 'openai', 'integrationTargets', 'sub2api', 'sub2apiDefaultProxyName']);
-  assignIfUpdated('codex2apiUrl', ['flows', 'openai', 'integrationTargets', 'codex2api', 'codex2apiUrl']);
-  assignIfUpdated('codex2apiAdminKey', ['flows', 'openai', 'integrationTargets', 'codex2api', 'codex2apiAdminKey']);
+  assignIfUpdated('vpsUrl', ['flows', 'openai', 'targets', 'cpa', 'vpsUrl']);
+  assignIfUpdated('vpsPassword', ['flows', 'openai', 'targets', 'cpa', 'vpsPassword']);
+  assignIfUpdated('localCpaStep9Mode', ['flows', 'openai', 'targets', 'cpa', 'localCpaStep9Mode']);
+  assignIfUpdated('sub2apiUrl', ['flows', 'openai', 'targets', 'sub2api', 'sub2apiUrl']);
+  assignIfUpdated('sub2apiEmail', ['flows', 'openai', 'targets', 'sub2api', 'sub2apiEmail']);
+  assignIfUpdated('sub2apiPassword', ['flows', 'openai', 'targets', 'sub2api', 'sub2apiPassword']);
+  assignIfUpdated('sub2apiGroupName', ['flows', 'openai', 'targets', 'sub2api', 'sub2apiGroupName']);
+  assignIfUpdated('sub2apiGroupNames', ['flows', 'openai', 'targets', 'sub2api', 'sub2apiGroupNames']);
+  assignIfUpdated('sub2apiAccountPriority', ['flows', 'openai', 'targets', 'sub2api', 'sub2apiAccountPriority']);
+  assignIfUpdated('sub2apiDefaultProxyName', ['flows', 'openai', 'targets', 'sub2api', 'sub2apiDefaultProxyName']);
+  assignIfUpdated('codex2apiUrl', ['flows', 'openai', 'targets', 'codex2api', 'codex2apiUrl']);
+  assignIfUpdated('codex2apiAdminKey', ['flows', 'openai', 'targets', 'codex2api', 'codex2apiAdminKey']);
   assignIfUpdated('customPassword', ['services', 'account', 'customPassword']);
   assignIfUpdated('signupMethod', ['flows', 'openai', 'signup', 'signupMethod']);
   assignIfUpdated('phoneVerificationEnabled', ['flows', 'openai', 'signup', 'phoneVerificationEnabled']);
@@ -3852,6 +3930,18 @@ function buildAutoRunFreshResetSettingsState(prevState = {}, activeFlowId = DEFA
   const currentSettingsState = isPlainObjectValue(prevState?.settingsState)
     ? prevState.settingsState
     : {};
+  const settingsSchemaApi = typeof getSettingsSchemaApi === 'function'
+    ? getSettingsSchemaApi()
+    : null;
+  const normalizedCurrentSettingsState = settingsSchemaApi?.normalizeSettingsState
+    ? settingsSchemaApi.normalizeSettingsState({
+      ...prevState,
+      activeFlowId,
+      settingsState: currentSettingsState,
+    }, {
+      activeFlowId,
+    })
+    : currentSettingsState;
   const normalizedStepExecutionRangeByFlow = normalizeStepExecutionRangeByFlow(prevState?.stepExecutionRangeByFlow || {});
   const nextSettingsStatePatch = {
     activeFlowId,
@@ -3870,7 +3960,9 @@ function buildAutoRunFreshResetSettingsState(prevState = {}, activeFlowId = DEFA
     },
     flows: {
       openai: {
-        integrationTargetId: prevState?.openaiIntegrationTargetId || prevState?.panelMode,
+        selectedTargetId: settingsSchemaApi?.getSelectedTargetId
+          ? settingsSchemaApi.getSelectedTargetId(normalizedCurrentSettingsState, 'openai')
+          : undefined,
         autoRun: normalizedStepExecutionRangeByFlow.openai
           ? {
             stepExecutionRange: normalizedStepExecutionRangeByFlow.openai,
@@ -3878,7 +3970,9 @@ function buildAutoRunFreshResetSettingsState(prevState = {}, activeFlowId = DEFA
           : undefined,
       },
       kiro: {
-        targetId: prevState?.kiroTargetId,
+        selectedTargetId: settingsSchemaApi?.getSelectedTargetId
+          ? settingsSchemaApi.getSelectedTargetId(normalizedCurrentSettingsState, 'kiro')
+          : undefined,
         autoRun: normalizedStepExecutionRangeByFlow.kiro
           ? {
             stepExecutionRange: normalizedStepExecutionRangeByFlow.kiro,
@@ -3920,15 +4014,14 @@ function buildFreshAutoRunKeepState(prevState = {}) {
 
   keepState.activeFlowId = activeFlowId;
   keepState.flowId = activeFlowId;
-  if (Object.prototype.hasOwnProperty.call(sourceState, 'panelMode')) {
-    keepState.panelMode = normalizePanelMode(sourceState.panelMode);
+  const settingsSchemaApi = typeof getSettingsSchemaApi === 'function'
+    ? getSettingsSchemaApi()
+    : null;
+  if (settingsSchemaApi?.getSelectedTargetId) {
+    keepState.targetId = settingsSchemaApi.getSelectedTargetId(settingsState, activeFlowId);
   }
   if (typeof kiroStateHelpers?.buildFreshKeepState === 'function') {
     Object.assign(keepState, kiroStateHelpers.buildFreshKeepState(sourceState));
-  } else if (Object.prototype.hasOwnProperty.call(sourceState, 'kiroTargetId')) {
-    keepState.kiroTargetId = self.MultiPageFlowRegistry?.normalizeTargetId
-      ? self.MultiPageFlowRegistry.normalizeTargetId('kiro', sourceState.kiroTargetId, 'kiro-rs')
-      : String(sourceState.kiroTargetId || 'kiro-rs').trim().toLowerCase();
   }
   if (Object.prototype.hasOwnProperty.call(sourceState, 'settingsSchemaVersion')) {
     keepState.settingsSchemaVersion = Number(sourceState.settingsSchemaVersion) || 0;
@@ -4174,7 +4267,15 @@ async function importSettingsBundle(configBundle) {
     throw new Error('\u914d\u7f6e\u6587\u4ef6\u7f3a\u5c11 settings \u914d\u7f6e\u6bb5\u3002');
   }
 
-  const importedSettings = buildPersistentSettingsPayload(configBundle.settings, {
+  const settingsImporter = self.MultiPageLegacySettingsImporter?.createSettingsImporter?.({
+    flowRegistry: self.MultiPageFlowRegistry,
+    settingsSchemaApi: typeof getSettingsSchemaApi === 'function' ? getSettingsSchemaApi() : null,
+    defaultFlowId: DEFAULT_ACTIVE_FLOW_ID,
+  }) || null;
+  const importedSettingsSource = typeof settingsImporter?.importSettings === 'function'
+    ? settingsImporter.importSettings(configBundle.settings)
+    : configBundle.settings;
+  const importedSettings = buildPersistentSettingsPayload(importedSettingsSource, {
     fillDefaults: true,
     requireKnownKeys: true,
   });
@@ -4192,7 +4293,7 @@ async function importSettingsBundle(configBundle) {
     Object.prototype.hasOwnProperty.call(importedSettings, 'phoneVerificationEnabled')
     || Object.prototype.hasOwnProperty.call(importedSettings, 'plusModeEnabled')
     || Object.prototype.hasOwnProperty.call(importedSettings, 'signupMethod')
-    || Object.prototype.hasOwnProperty.call(importedSettings, 'panelMode')
+    || Object.prototype.hasOwnProperty.call(importedSettings, 'targetId')
     || Object.prototype.hasOwnProperty.call(importedSettings, 'activeFlowId')
     || Object.prototype.hasOwnProperty.call(importedSettings, 'accountContributionEnabled')
   ) {
@@ -4438,7 +4539,7 @@ function buildAccountContributionState(enabled, persistedSettings = {}, currentS
       ...(routing ? {
         contributionSource: routing.source,
         contributionTargetGroupName: routing.targetGroupName,
-        panelMode: routing.source,
+        targetId: routing.source,
       } : {}),
       customPassword: '',
       accountRunHistoryTextEnabled: false,
@@ -4451,7 +4552,7 @@ function buildAccountContributionState(enabled, persistedSettings = {}, currentS
     accountContributionExpected: false,
     contributionAdapterId: '',
     flowContributionRuntime: {},
-    panelMode: persistedSettings.panelMode || DEFAULT_STATE.panelMode,
+    targetId: persistedSettings.targetId || DEFAULT_STATE.targetId,
     customPassword: persistedSettings.customPassword || '',
     accountRunHistoryTextEnabled: Boolean(persistedSettings.accountRunHistoryTextEnabled),
   };
@@ -4474,7 +4575,7 @@ async function setAccountContributionMode(enabled, options = {}) {
   }
   broadcastDataUpdate({
     ...contributionBroadcast,
-    panelMode: nextState.panelMode,
+    targetId: nextState.targetId,
     customPassword: nextState.customPassword,
     accountRunHistoryTextEnabled: nextState.accountRunHistoryTextEnabled,
     accountRunHistoryHelperBaseUrl: nextState.accountRunHistoryHelperBaseUrl,
@@ -8544,10 +8645,10 @@ function getPanelMode(state = {}) {
   if (typeof navigationUtils !== 'undefined' && navigationUtils?.getPanelMode) {
     return navigationUtils.getPanelMode(state);
   }
-  if (state.panelMode === 'sub2api') {
+  if (state.targetId === 'sub2api') {
     return 'sub2api';
   }
-  if (state.panelMode === 'codex2api') {
+  if (state.targetId === 'codex2api') {
     return 'codex2api';
   }
   return 'cpa';
@@ -8585,6 +8686,17 @@ function isLikelyLoggedInChatgptHomeUrl(rawUrl) {
   const parsed = parseUrlSafely(rawUrl);
   if (!parsed) return false;
   if (!isSignupEntryHost(String(parsed.hostname || '').toLowerCase())) {
+    return false;
+  }
+  return !/^\/(?:auth\/|create-account\/|email-verification|log-in|add-phone)(?:[/?#]|$)/i.test(parsed.pathname || '');
+}
+
+function isStep5CompletionChatgptUrl(rawUrl) {
+  const parsed = parseUrlSafely(rawUrl);
+  if (!parsed) return false;
+  const protocol = String(parsed.protocol || '').toLowerCase();
+  const hostname = String(parsed.hostname || '').toLowerCase();
+  if (protocol !== 'https:' || !['chatgpt.com', 'www.chatgpt.com'].includes(hostname)) {
     return false;
   }
   return !/^\/(?:auth\/|create-account\/|email-verification|log-in|add-phone)(?:[/?#]|$)/i.test(parsed.pathname || '');
@@ -8663,7 +8775,6 @@ function matchesSourceUrlFamily(source, candidateUrl, referenceUrl) {
   const reference = parseUrlSafely(referenceUrl);
   switch (source) {
     case 'openai-auth':
-    case 'signup-page':
       return isSignupPageHost(candidate.hostname) || isSignupEntryHost(candidate.hostname);
     case 'duck-mail':
       return candidate.hostname === 'duckduckgo.com' && candidate.pathname.startsWith('/email/');
@@ -8977,7 +9088,6 @@ function getSourceLabel(source) {
     'openai-auth': '认证页',
     'gmail-mail': 'Gmail 邮箱',
     'sidepanel': '侧边栏',
-    'signup-page': '认证页',
     'vps-panel': 'CPA 面板',
     'sub2api-panel': 'SUB2API 后台',
     'codex2api-panel': 'Codex2API 后台',
@@ -9356,13 +9466,9 @@ function isGpcCheckoutRestartRequiredFailure(error) {
 
 function isPlusCheckoutRestartStep(step, stepExecutionKey = '', state = {}) {
   const normalizedKey = String(stepExecutionKey || '').trim();
-  if (normalizedKey === 'plus-checkout-create'
+  return normalizedKey === 'plus-checkout-create'
     || normalizedKey === 'plus-checkout-billing'
-    || normalizedKey === 'gopay-subscription-confirm') {
-    return true;
-  }
-  const numericStep = Number(step);
-  return Boolean(state?.plusModeEnabled) && (numericStep === 6 || numericStep === 7);
+    || normalizedKey === 'gopay-subscription-confirm';
 }
 
 function isPlusCheckoutRestartRequiredFailure(error) {
@@ -9617,10 +9723,23 @@ function getDownstreamStateResets(step, state = {}) {
       currentPhoneVerificationCountdownWindowTotal: 0,
     };
   }
-  if (step === 5 || step === 6 || step === 7 || step === 8) {
+  const normalizedStepKey = String(stepKey || '').trim();
+  const isEarlyRegistrationNode = [
+    'fill-profile',
+    'wait-registration-success',
+    'plus-checkout-create',
+  ].includes(normalizedStepKey);
+  const isBillingNode = normalizedStepKey === 'plus-checkout-billing';
+  const isApprovalNode = normalizedStepKey === 'paypal-approve'
+    || normalizedStepKey === 'gopay-subscription-confirm'
+    || normalizedStepKey === 'paypal-hosted-email'
+    || normalizedStepKey === 'paypal-hosted-card'
+    || normalizedStepKey === 'paypal-hosted-create-account'
+    || normalizedStepKey === 'paypal-hosted-review';
+  if (isEarlyRegistrationNode || isBillingNode || isApprovalNode) {
     return {
-      ...(step <= 6 ? plusRuntimeResets : {}),
-      ...(step === 7 ? {
+      ...(isEarlyRegistrationNode ? plusRuntimeResets : {}),
+      ...(isBillingNode ? {
         plusBillingCountryText: '',
         plusBillingAddress: null,
         plusPaypalApprovedAt: null,
@@ -9637,7 +9756,7 @@ function getDownstreamStateResets(step, state = {}) {
         gopayHelperOtpRequestId: '',
         gopayHelperOtpReferenceId: '',
       } : {}),
-      ...(step === 8 ? {
+      ...(isApprovalNode ? {
         plusPaypalApprovedAt: null,
         plusGoPayApprovedAt: null,
         plusReturnUrl: '',
@@ -9654,7 +9773,7 @@ function getDownstreamStateResets(step, state = {}) {
       currentPhoneVerificationCountdownWindowTotal: 0,
     };
   }
-  if (step === 9) {
+  if (stepKey === 'plus-checkout-return' || stepKey === 'confirm-oauth') {
     return {
       pendingPhoneActivationConfirmation: null,
       plusReturnUrl: '',
@@ -11540,13 +11659,20 @@ async function executeNodeAndWait(nodeId, delayAfter = 2000) {
     const completionSignalTimeoutMs = getNodeCompletionSignalTimeoutMs(normalizedNodeId, executionState);
     await addLog(`自动运行：节点 ${normalizedNodeId} 已发起，正在等待完成信号（超时 ${Math.round(completionSignalTimeoutMs / 1000)} 秒）。`, 'info');
     completionPayload = await executeNodeViaCompletionSignal(normalizedNodeId, completionSignalTimeoutMs);
+    if (normalizedNodeId === 'fill-profile') {
+      await addLog(
+        `步骤 5 [调试] 已收到资料页完成信号 | outcome=${String(completionPayload?.outcome || 'none')} | navigationStarted=${Boolean(completionPayload?.navigationStarted)} | url=${String(completionPayload?.url || '') || 'unknown'}`,
+        'info',
+        { step: 5, stepKey: 'fill-profile' }
+      );
+    }
     await addLog(`自动运行：节点 ${normalizedNodeId} 已收到完成信号，准备继续后续节点。`, 'info');
   } else {
     await executeNode(normalizedNodeId);
   }
 
   if (normalizedNodeId === 'fill-profile') {
-    const signupTabId = await getTabId('signup-page');
+    const signupTabId = await getTabId('openai-auth');
     if (signupTabId) {
       await addLog('自动运行：填写资料节点已收到完成信号，正在等待当前页面完成加载并稳定...', 'info');
       await waitForTabStableComplete(signupTabId, {
@@ -11557,6 +11683,12 @@ async function executeNodeAndWait(nodeId, delayAfter = 2000) {
       });
       try {
         await validateStep5PostCompletion(signupTabId, completionPayload || {});
+        await setNodeStatus(normalizedNodeId, 'completed');
+        await addLog('已完成', 'ok', { nodeId: normalizedNodeId });
+        await addLog('步骤 5 [调试] 资料页完成信号已通过后台复核。', 'ok', {
+          step: 5,
+          stepKey: 'fill-profile',
+        });
       } catch (step5ValidationError) {
         await setNodeStatus(normalizedNodeId, 'failed');
         await addLog(`失败：${getErrorMessage(step5ValidationError)}`, 'error', { nodeId: normalizedNodeId });
@@ -12955,7 +13087,7 @@ async function runAutoSequenceFromNodeGraph(startNodeId, context = {}) {
     continue;
   }
 
-  const signupTabId = await getTabId('signup-page');
+  const signupTabId = await getTabId('openai-auth');
   if (signupTabId) {
     await chrome.tabs.update(signupTabId, { active: true });
   }
@@ -13238,9 +13370,9 @@ async function resumeAutoRun() {
 // ============================================================
 
 const SIGNUP_ENTRY_URL = 'https://chatgpt.com/';
-const SIGNUP_PAGE_INJECT_FILES = ['content/utils.js', 'content/operation-delay.js', 'content/auth-page-recovery.js', 'content/phone-country-utils.js', 'content/phone-auth.js', 'content/signup-page.js'];
-const KIRO_REGISTER_INJECT_FILES = ['shared/source-registry.js', 'shared/kiro-timeouts.js', 'content/utils.js', 'content/kiro/register-page.js'];
-const KIRO_DESKTOP_AUTHORIZE_INJECT_FILES = ['shared/source-registry.js', 'shared/kiro-timeouts.js', 'content/utils.js', 'content/kiro/desktop-authorize-page.js'];
+const OPENAI_AUTH_INJECT_FILES = ['content/utils.js', 'content/operation-delay.js', 'flows/openai/content/auth-page-recovery.js', 'flows/openai/content/phone-country-utils.js', 'flows/openai/content/phone-auth.js', 'flows/openai/content/openai-auth.js'];
+const KIRO_REGISTER_INJECT_FILES = ['flows/openai/index.js', 'flows/kiro/index.js', 'flows/index.js', 'core/flow-kernel/flow-registry.js', 'core/flow-kernel/source-registry.js', 'shared/kiro-timeouts.js', 'content/utils.js', 'flows/kiro/content/register-page.js'];
+const KIRO_DESKTOP_AUTHORIZE_INJECT_FILES = ['flows/openai/index.js', 'flows/kiro/index.js', 'flows/index.js', 'core/flow-kernel/flow-registry.js', 'core/flow-kernel/source-registry.js', 'shared/kiro-timeouts.js', 'content/utils.js', 'flows/kiro/content/desktop-authorize-page.js'];
 const panelBridge = self.MultiPageBackgroundPanelBridge?.createPanelBridge({
   chrome,
   addLog,
@@ -13289,7 +13421,7 @@ const signupFlowHelpers = self.MultiPageSignupFlowHelpers?.createSignupFlowHelpe
   setEmailState,
   setState,
   SIGNUP_ENTRY_URL,
-  SIGNUP_PAGE_INJECT_FILES,
+  OPENAI_AUTH_INJECT_FILES,
   waitForTabStableComplete,
   waitForTabUrlMatch,
 });
@@ -13420,7 +13552,7 @@ const step2Executor = self.MultiPageBackgroundStep2?.createStep2Executor({
   resolveSignupMethod,
   resolveSignupEmailForFlow,
   sendToContentScriptResilient,
-  SIGNUP_PAGE_INJECT_FILES,
+  OPENAI_AUTH_INJECT_FILES,
   waitForTabStableComplete,
 });
 const step3Executor = self.MultiPageBackgroundStep3?.createStep3Executor({
@@ -13434,7 +13566,7 @@ const step3Executor = self.MultiPageBackgroundStep3?.createStep3Executor({
   sendToContentScript,
   setPasswordState,
   setState,
-  SIGNUP_PAGE_INJECT_FILES,
+  OPENAI_AUTH_INJECT_FILES,
 });
 
 async function ensureIcloudMailSessionForVerification(options = {}) {
@@ -13532,6 +13664,7 @@ const step8Executor = self.MultiPageBackgroundStep8?.createStep8Executor({
   resolveSignupEmailForFlow,
   persistRegistrationEmailState,
   phoneVerificationHelpers,
+  getStepIdByKeyForState,
   rerunStep7ForStep8Recovery: (...args) => rerunStep7ForStep8Recovery(...args),
   resolveSignupMethod,
   reuseOrCreateTab,
@@ -13919,12 +14052,27 @@ const messageRouter = self.MultiPageBackgroundMessageRouter?.createMessageRouter
   },
   finalizeStep3Completion: async () => {
     const currentState = await getState();
-    const signupTabId = await getTabId('signup-page');
+    const signupTabId = await getTabId('openai-auth');
     return signupFlowHelpers.finalizeSignupPasswordSubmitInTab(
       signupTabId,
       currentState.password || currentState.customPassword || '',
       3
     );
+  },
+  finalizeStep5Completion: async (completionPayload = {}) => {
+    const signupTabId = await getTabId('openai-auth');
+    if (!signupTabId) {
+      throw new Error('步骤 5：缺少认证页标签页，无法确认是否已跳转到 https://chatgpt.com。');
+    }
+    await waitForTabStableComplete(signupTabId, {
+      timeoutMs: 120000,
+      retryDelayMs: 300,
+      stableMs: 1000,
+      initialDelayMs: 800,
+    });
+    await validateStep5PostCompletion(signupTabId, completionPayload || {});
+    await setNodeStatus('fill-profile', 'completed');
+    await addLog('已完成', 'ok', { nodeId: 'fill-profile' });
   },
   finalizeIcloudAliasAfterSuccessfulFlow,
   findHotmailAccount,
@@ -14145,7 +14293,7 @@ async function executeStep2(state) {
 }
 
 // ============================================================
-// Step 3: Fill Password (via signup-page.js)
+// Step 3: Fill Password (via openai-auth.js)
 // ============================================================
 
 async function executeStep3(state) {
@@ -14153,7 +14301,7 @@ async function executeStep3(state) {
 }
 
 // ============================================================
-// Step 4: Get Signup Verification Code (qq-mail.js polls, then fills in signup-page.js)
+// Step 4: Get Signup Verification Code (qq-mail.js polls, then fills in openai-auth.js)
 // ============================================================
 
 function getMailConfig(state) {
@@ -14307,7 +14455,7 @@ async function executeStep4(state) {
 }
 
 // ============================================================
-// Step 5: Fill Name & Birthday (via signup-page.js)
+// Step 5: Fill Name & Birthday (via openai-auth.js)
 // ============================================================
 
 async function executeStep5(state) {
@@ -14661,7 +14809,7 @@ async function getLoginAuthStateFromContent(options = {}) {
   const logStep = visibleStep > 0 ? visibleStep : null;
   const { logMessage = '认证页正在切换，等待页面重新就绪后继续确认验证码页状态...' } = options;
   const result = await sendToContentScriptResilient(
-    'signup-page',
+    'openai-auth',
     {
       type: 'GET_LOGIN_AUTH_STATE',
       source: 'background',
@@ -14686,7 +14834,7 @@ async function getLoginAuthStateFromContent(options = {}) {
 
 async function getStep5SubmitStateFromContent(options = {}) {
   const result = await sendToContentScriptResilient(
-    'signup-page',
+    'openai-auth',
     {
       type: 'GET_STEP5_SUBMIT_STATE',
       source: 'background',
@@ -14711,7 +14859,7 @@ async function getStep5SubmitStateFromContent(options = {}) {
 
 async function recoverStep5SubmitRetryPageOnTab(options = {}) {
   const result = await sendToContentScriptResilient(
-    'signup-page',
+    'openai-auth',
     {
       type: 'RECOVER_STEP5_SUBMIT_RETRY_PAGE',
       source: 'background',
@@ -14737,18 +14885,69 @@ async function recoverStep5SubmitRetryPageOnTab(options = {}) {
   return result || {};
 }
 
+async function addStep5PostCompletionDebugLog(message, details = {}) {
+  const pageState = details?.pageState && typeof details.pageState === 'object'
+    ? details.pageState
+    : null;
+  const summary = [
+    `步骤 5 [调试] ${message}`,
+    details?.completionOutcome ? `completionOutcome=${details.completionOutcome}` : null,
+    `navigationStarted=${Boolean(details?.navigationStarted)}`,
+    details?.tabUrl ? `tabUrl=${details.tabUrl}` : null,
+    details?.completionUrl ? `completionUrl=${details.completionUrl}` : null,
+    pageState?.url ? `contentUrl=${pageState.url}` : null,
+    pageState ? `retryPage=${Boolean(pageState.retryPage)}` : null,
+    pageState ? `retryEnabled=${Boolean(pageState.retryEnabled)}` : null,
+    pageState ? `successState=${pageState.successState || 'none'}` : null,
+    pageState ? `profileVisible=${Boolean(pageState.profileVisible)}` : null,
+    pageState ? `unknownAuthPage=${Boolean(pageState.unknownAuthPage)}` : null,
+    pageState ? `maxCheckAttemptsBlocked=${Boolean(pageState.maxCheckAttemptsBlocked)}` : null,
+    pageState ? `userAlreadyExistsBlocked=${Boolean(pageState.userAlreadyExistsBlocked)}` : null,
+    pageState?.errorText ? `errorText=${pageState.errorText}` : null,
+  ]
+    .filter(Boolean)
+    .join(' | ');
+
+  await addLog(summary, details?.level || 'info', {
+    step: 5,
+    stepKey: 'fill-profile',
+  });
+}
+
 async function validateStep5PostCompletion(tabId, completionPayload = {}) {
   if (!Number.isInteger(tabId)) {
     throw new Error('步骤 5：缺少有效的资料页标签页，无法确认提交后的最终状态。');
   }
+  const debugLog = typeof addStep5PostCompletionDebugLog === 'function'
+    ? addStep5PostCompletionDebugLog
+    : async (message, details = {}) => {
+        if (typeof addLog === 'function') {
+          await addLog(`步骤 5 [调试] ${message}`, details?.level || 'info', {
+            step: 5,
+            stepKey: 'fill-profile',
+          });
+        }
+      };
 
   const maxAuthRetryRecoveries = Math.max(1, Number(completionPayload?.maxAuthRetryRecoveries) || 2);
   let authRetryRecoveryCount = 0;
+  await debugLog('后台已收到资料页完成信号，准备开始最终状态复核。', {
+    completionOutcome: String(completionPayload?.outcome || '').trim(),
+    completionUrl: String(completionPayload?.url || '').trim(),
+    navigationStarted: Boolean(completionPayload?.navigationStarted),
+  });
 
   while (true) {
     const tab = await chrome.tabs.get(tabId).catch(() => null);
     const currentUrl = String(tab?.url || completionPayload?.url || '').trim();
-    if (currentUrl && isLikelyLoggedInChatgptHomeUrl(currentUrl)) {
+    if (currentUrl && isStep5CompletionChatgptUrl(currentUrl)) {
+      await debugLog('后台直接通过标签页 URL 确认已进入 chatgpt.com，步骤 5 完成。', {
+        completionOutcome: String(completionPayload?.outcome || '').trim(),
+        completionUrl: String(completionPayload?.url || '').trim(),
+        navigationStarted: Boolean(completionPayload?.navigationStarted),
+        tabUrl: currentUrl,
+        level: 'ok',
+      });
       return {
         successState: 'logged_in_home',
         url: currentUrl,
@@ -14760,6 +14959,13 @@ async function validateStep5PostCompletion(tabId, completionPayload = {}) {
       responseTimeoutMs: 15000,
       retryDelayMs: 500,
       logMessage: '步骤 5：资料提交已触发页面跳转，正在确认最终页面状态...',
+    });
+    await debugLog('后台复核当前页面状态。', {
+      completionOutcome: String(completionPayload?.outcome || '').trim(),
+      completionUrl: String(completionPayload?.url || '').trim(),
+      navigationStarted: Boolean(completionPayload?.navigationStarted),
+      tabUrl: currentUrl,
+      pageState,
     });
 
     if (pageState.userAlreadyExistsBlocked) {
@@ -14774,6 +14980,14 @@ async function validateStep5PostCompletion(tabId, completionPayload = {}) {
         throw new Error(`步骤 5：资料提交后连续进入认证重试页 ${maxAuthRetryRecoveries} 次，页面仍未恢复。URL: ${pageState.url || currentUrl || 'unknown'}`);
       }
       authRetryRecoveryCount += 1;
+      await debugLog(`后台复核检测到认证重试页，准备恢复（${authRetryRecoveryCount}/${maxAuthRetryRecoveries}）。`, {
+        completionOutcome: String(completionPayload?.outcome || '').trim(),
+        completionUrl: String(completionPayload?.url || '').trim(),
+        navigationStarted: Boolean(completionPayload?.navigationStarted),
+        tabUrl: currentUrl,
+        pageState,
+        level: 'warn',
+      });
       await addLog(`步骤 5：提交完成信号后检测到认证重试页，正在自动恢复（${authRetryRecoveryCount}/${maxAuthRetryRecoveries}）...`, 'warn', {
         step: 5,
         stepKey: 'fill-profile',
@@ -14792,22 +15006,74 @@ async function validateStep5PostCompletion(tabId, completionPayload = {}) {
       continue;
     }
 
-    if (pageState.successState === 'logged_in_home' || pageState.successState === 'oauth_consent' || pageState.successState === 'add_phone') {
+    if (pageState.successState === 'logged_in_home' && isStep5CompletionChatgptUrl(pageState.url)) {
+      await debugLog(`后台复核确认成功状态：${pageState.successState}`, {
+        completionOutcome: String(completionPayload?.outcome || '').trim(),
+        completionUrl: String(completionPayload?.url || '').trim(),
+        navigationStarted: Boolean(completionPayload?.navigationStarted),
+        tabUrl: currentUrl,
+        pageState,
+        level: 'ok',
+      });
       return pageState;
     }
 
+    if (pageState.successState) {
+      await debugLog('后台复核发现非 chatgpt.com 的步骤 5 完成候选，按未完成处理。', {
+        completionOutcome: String(completionPayload?.outcome || '').trim(),
+        completionUrl: String(completionPayload?.url || '').trim(),
+        navigationStarted: Boolean(completionPayload?.navigationStarted),
+        tabUrl: currentUrl,
+        pageState,
+        level: 'error',
+      });
+      throw new Error(`步骤 5：资料提交后尚未跳转到 https://chatgpt.com，不能标记完成。当前状态：${pageState.successState}，URL: ${pageState.url || currentUrl || 'unknown'}`);
+    }
+
     if (pageState.errorText) {
+      await debugLog('后台复核发现页面错误文本，准备按失败结束。', {
+        completionOutcome: String(completionPayload?.outcome || '').trim(),
+        completionUrl: String(completionPayload?.url || '').trim(),
+        navigationStarted: Boolean(completionPayload?.navigationStarted),
+        tabUrl: currentUrl,
+        pageState,
+        level: 'error',
+      });
       throw new Error(`步骤 5：资料提交后页面返回错误：${pageState.errorText}。URL: ${pageState.url || currentUrl || 'unknown'}`);
     }
 
     if (pageState.profileVisible) {
+      await debugLog('后台复核发现页面仍停留在资料页，准备按失败结束。', {
+        completionOutcome: String(completionPayload?.outcome || '').trim(),
+        completionUrl: String(completionPayload?.url || '').trim(),
+        navigationStarted: Boolean(completionPayload?.navigationStarted),
+        tabUrl: currentUrl,
+        pageState,
+        level: 'error',
+      });
       throw new Error(`步骤 5：资料提交完成信号已收到，但页面仍停留在资料页，当前流程将直接报错。URL: ${pageState.url || currentUrl || 'unknown'}`);
     }
 
     if (pageState.unknownAuthPage) {
+      await debugLog('后台复核进入未知认证页，无法确认成功。', {
+        completionOutcome: String(completionPayload?.outcome || '').trim(),
+        completionUrl: String(completionPayload?.url || '').trim(),
+        navigationStarted: Boolean(completionPayload?.navigationStarted),
+        tabUrl: currentUrl,
+        pageState,
+        level: 'error',
+      });
       throw new Error(`步骤 5：资料提交后进入未识别的认证页，无法确认成功。URL: ${pageState.url || currentUrl || 'unknown'}`);
     }
 
+    await debugLog('后台复核未识别到成功或明确失败状态，准备按失败结束。', {
+      completionOutcome: String(completionPayload?.outcome || '').trim(),
+      completionUrl: String(completionPayload?.url || '').trim(),
+      navigationStarted: Boolean(completionPayload?.navigationStarted),
+      tabUrl: currentUrl,
+      pageState,
+      level: 'error',
+    });
     throw new Error(`步骤 5：资料提交后未能确认最终状态。URL: ${pageState.url || currentUrl || 'unknown'}`);
   }
 }
@@ -14851,7 +15117,7 @@ async function ensureStep8VerificationPageReady(options = {}) {
       const recoverTimeoutMs = 15000;
       if (typeof sendToContentScriptResilient === 'function') {
         recoverResult = await sendToContentScriptResilient(
-          'signup-page',
+          'openai-auth',
           recoverMessage,
           {
             timeoutMs: recoverTimeoutMs,
@@ -14863,7 +15129,7 @@ async function ensureStep8VerificationPageReady(options = {}) {
           }
         );
       } else if (typeof sendToContentScript === 'function') {
-        recoverResult = await sendToContentScript('signup-page', recoverMessage, {
+        recoverResult = await sendToContentScript('openai-auth', recoverMessage, {
           responseTimeoutMs: recoverTimeoutMs,
         });
       }
@@ -14944,6 +15210,7 @@ async function rerunStep7ForStep8Recovery(options = {}) {
     ? getAuthChainStartStepId(initialState)
     : FINAL_OAUTH_CHAIN_START_STEP;
   const authLoginNodeId = getNodeIdByStepForState(authLoginStep, initialState) || 'oauth-login';
+  const recoveryState = buildAuthLoginRecoveryState(initialState, authLoginNodeId);
   await addLog(logMessage, 'warn', {
     step: logStep,
     stepKey: logStepKey,
@@ -14953,8 +15220,9 @@ async function rerunStep7ForStep8Recovery(options = {}) {
 
   try {
     await step7Executor.executeStep7({
-      ...initialState,
+      ...recoveryState,
       visibleStep: authLoginStep,
+      nodeId: authLoginNodeId,
     });
   } catch (err) {
     const latestState = await getState();
@@ -15100,9 +15368,9 @@ async function shouldDeferStep9CallbackTimeout(details = {}) {
 
 async function ensureStep8SignupPageReady(tabId, options = {}) {
   const visibleStep = Math.floor(Number(options.visibleStep || options.logStep || options.step) || 0);
-  await ensureContentScriptReadyOnTab('signup-page', tabId, {
-    inject: SIGNUP_PAGE_INJECT_FILES,
-    injectSource: 'signup-page',
+  await ensureContentScriptReadyOnTab('openai-auth', tabId, {
+    inject: OPENAI_AUTH_INJECT_FILES,
+    injectSource: 'openai-auth',
     timeoutMs: options.timeoutMs ?? 15000,
     retryDelayMs: options.retryDelayMs ?? 600,
     logMessage: options.logMessage || '',
@@ -15144,7 +15412,7 @@ async function readAuthTabSnapshot(tabId) {
 
 async function getStep8PageState(tabId, responseTimeoutMs = 1500, visibleStep = 9) {
   try {
-    const result = await sendTabMessageWithTimeout(tabId, 'signup-page', {
+    const result = await sendTabMessageWithTimeout(tabId, 'openai-auth', {
       type: 'STEP8_GET_STATE',
       source: 'background',
       payload: { visibleStep },
@@ -15221,7 +15489,7 @@ async function prepareStep8DebuggerClick(tabId, options = {}) {
     logStepKey: 'confirm-oauth',
     logMessage: '认证页内容脚本已失联，正在恢复后继续定位按钮...',
   });
-  const result = await sendToContentScriptResilient('signup-page', {
+  const result = await sendToContentScriptResilient('openai-auth', {
     type: 'STEP8_FIND_AND_CLICK',
     source: 'background',
     payload: { visibleStep, nodeId: 'confirm-oauth' },
@@ -15251,7 +15519,7 @@ async function triggerStep8ContentStrategy(tabId, strategy, options = {}) {
     logStepKey: 'confirm-oauth',
     logMessage: '认证页内容脚本已失联，正在恢复后继续点击“继续”按钮...',
   });
-  const result = await sendToContentScriptResilient('signup-page', {
+  const result = await sendToContentScriptResilient('openai-auth', {
     type: 'STEP8_TRIGGER_CONTINUE',
     source: 'background',
     payload: {
@@ -15289,7 +15557,7 @@ async function recoverAuthRetryPageOnTab(tabId, payload = {}, options = {}) {
     logStepKey: 'confirm-oauth',
     logMessage: options.readyLogMessage || '认证页内容脚本已失联，正在恢复后继续处理重试页...',
   });
-  const result = await sendToContentScriptResilient('signup-page', {
+  const result = await sendToContentScriptResilient('openai-auth', {
     type: 'RECOVER_AUTH_RETRY_PAGE',
     source: 'background',
     payload: { nodeId: 'confirm-oauth', ...(payload || {}) },
@@ -15599,6 +15867,7 @@ const step9Executor = self.MultiPageBackgroundStep9?.createStep9Executor({
   getStep8CallbackUrlFromNavigation,
   getStep8CallbackUrlFromTabUpdate,
   getStep8EffectLabel,
+  getStepIdByKeyForState,
   getTabId,
   getWebNavCommittedListener,
   getWebNavListener,

@@ -4,19 +4,19 @@ const fs = require('node:fs');
 
 test('background imports node registry and wires the rebuilt Kiro executors', () => {
   const source = fs.readFileSync('background.js', 'utf8');
-  assert.match(source, /background\/steps\/registry\.js/);
+  assert.match(source, /core\/flow-kernel\/step-registry\.js/);
   assert.match(source, /data\/step-definitions\.js/);
-  assert.match(source, /background\/workflow-engine\.js/);
+  assert.match(source, /core\/flow-kernel\/workflow-engine\.js/);
   assert.match(source, /MultiPageStepDefinitions\?\.getNodes/);
   assert.match(source, /buildNodeRegistry\(definitions/);
   assert.match(source, /const stepRegistryCache = new Map\(\);/);
   assert.match(source, /const definitions = getNodeDefinitionsForState\(state\);/);
   assert.match(source, /stepRegistryCache\.set\(cacheKey, buildStepRegistry\(definitions\)\)/);
 
-  assert.match(source, /background\/kiro\/register-runner\.js/);
-  assert.match(source, /background\/kiro\/desktop-client\.js/);
-  assert.match(source, /background\/kiro\/desktop-authorize-runner\.js/);
-  assert.match(source, /background\/kiro\/publisher-kiro-rs\.js/);
+  assert.match(source, /flows\/kiro\/background\/register-runner\.js/);
+  assert.match(source, /flows\/kiro\/background\/desktop-client\.js/);
+  assert.match(source, /flows\/kiro\/background\/desktop-authorize-runner\.js/);
+  assert.match(source, /flows\/kiro\/background\/publisher-kiro-rs\.js/);
   assert.doesNotMatch(source, /background\/steps\/kiro-device-auth\.js/);
 
   assert.match(source, /const kiroRegisterRunner = self\.MultiPageBackgroundKiroRegisterRunner\?\.createKiroRegisterRunner\(/);

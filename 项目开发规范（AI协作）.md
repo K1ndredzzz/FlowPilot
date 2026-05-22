@@ -93,7 +93,7 @@
 - 步骤文件应优先使用语义化名称，不再使用 `stepX.js` 命名。
 - 步骤顺序统一由：
   - [data/step-definitions.js](./data/step-definitions.js)
-  - [background/steps/registry.js](./background/steps/registry.js)
+  - [core/flow-kernel/step-registry.js](./core/flow-kernel/step-registry.js)
   共同管理。
 - 步骤显示和执行必须以 `key / nodeId` 为主，不得重新回到硬编码步骤号驱动流程的写法。
 - 同一个可见步骤号在不同模式下可能代表不同业务位置；日志、完成信号、错误恢复和 UI 渲染必须按当前步骤定义解析。
@@ -230,7 +230,7 @@
 
 - 如果新增来源本身已经提供稳定的后台协议接口，可以直接走协议分支接入：
   - 步骤 7 通过 `background/panel-bridge.js` 生成 `auth_url`
-  - 步骤 10 通过 `background/steps/platform-verify.js` 直接提交 localhost callback
+  - 步骤 10 通过 `flows/openai/background/steps/platform-verify.js` 直接提交 localhost callback
 - 这类来源优先复用现有 OpenAI 授权页与 localhost callback 主链，不要为了“看起来统一”再额外新增一套页面 DOM 自动点击内容脚本。
 - 只有当目标来源没有可用协议接口、必须依赖后台页面按钮时，才新增对应的 panel content script。
 
@@ -304,10 +304,10 @@
 - session import 节点必须直接完成目标平台接入，不得再经过 `platform-verify`，也不得混入普通 OAuth callback 状态机。
 - 相关改动必须同步检查：
   - `data/step-definitions.js`
-  - `shared/flow-capabilities.js`
-  - `shared/settings-schema.js`
+  - `core/flow-kernel/flow-capabilities.js`
+  - `core/flow-kernel/settings-schema.js`
   - `background/message-router.js`
-  - 对应 session import executor 与 `background/steps/platform-verify.js`
+  - 对应 session import executor 与 `flows/openai/background/steps/platform-verify.js`
   - `sidepanel/sidepanel.html` 与 `sidepanel/sidepanel.js`
   - 手动跳过、自动运行、最终完成节点判断、日志 step 映射与测试
 

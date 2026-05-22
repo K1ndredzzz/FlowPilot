@@ -1,9 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
+const { readFlowRegistryBundle, readBundle } = require('./helpers/script-bundles.js');
 
-const flowRegistrySource = fs.readFileSync('shared/flow-registry.js', 'utf8');
-const settingsSchemaSource = fs.readFileSync('shared/settings-schema.js', 'utf8');
+const flowRegistrySource = readFlowRegistryBundle();
+const settingsSchemaSource = readBundle(['core/flow-kernel/settings-schema.js']);
 
 function loadApis() {
   const scope = {};
@@ -57,7 +57,7 @@ test('settings schema normalizes view input into canonical nested namespaces', (
 
   const normalized = schema.normalizeSettingsState({
     activeFlowId: 'kiro',
-    panelMode: 'sub2api',
+    targetId: 'kiro-rs',
     mailProvider: 'hotmail',
     ipProxyEnabled: true,
     ipProxyService: '711proxy',
@@ -75,9 +75,9 @@ test('settings schema normalizes view input into canonical nested namespaces', (
   assert.equal(normalized.services.email.provider, 'hotmail');
   assert.equal(normalized.services.proxy.enabled, true);
   assert.equal(normalized.services.account.customPassword, 'SharedSecret123!');
-  assert.equal(normalized.flows.openai.integrationTargetId, 'sub2api');
+  assert.equal(normalized.flows.openai.selectedTargetId, 'cpa');
   assert.equal(normalized.flows.openai.plus.plusAccountAccessStrategy, 'sub2api_codex_session');
-  assert.equal(normalized.flows.kiro.targetId, 'kiro-rs');
+  assert.equal(normalized.flows.kiro.selectedTargetId, 'kiro-rs');
   assert.equal(normalized.flows.kiro.targets['kiro-rs'].baseUrl, 'https://kiro.example.com/admin');
   assert.equal(normalized.flows.kiro.targets['kiro-rs'].apiKey, 'secret-key');
   assert.deepEqual(normalized.flows.kiro.autoRun.stepExecutionRange, {
@@ -116,7 +116,7 @@ test('settings schema can project canonical state into a read view without legac
   const schema = settingsSchema.createSettingsSchema();
   const normalized = schema.normalizeSettingsState({
     activeFlowId: 'kiro',
-    kiroTargetId: 'kiro-rs',
+    targetId: 'kiro-rs',
     kiroRsUrl: 'https://kiro.example.com/admin',
     kiroRsKey: 'key-123',
     plusAccountAccessStrategy: 'sub2api_codex_session',
@@ -124,13 +124,11 @@ test('settings schema can project canonical state into a read view without legac
   const view = schema.buildSettingsView(normalized);
 
   assert.equal(view.activeFlowId, 'kiro');
-  assert.equal(view.openaiIntegrationTargetId, 'cpa');
-  assert.equal(view.kiroTargetId, 'kiro-rs');
-  assert.equal(view.panelMode, 'cpa');
+  assert.equal(view.targetId, 'kiro-rs');
   assert.equal(view.kiroRsUrl, 'https://kiro.example.com/admin');
   assert.equal(view.kiroRsKey, 'key-123');
   assert.equal(view.plusAccountAccessStrategy, 'sub2api_codex_session');
-  assert.equal(view.settingsSchemaVersion, 4);
+  assert.equal(view.settingsSchemaVersion, 5);
   assert.equal(view.settingsState.activeFlowId, 'kiro');
 });
 
