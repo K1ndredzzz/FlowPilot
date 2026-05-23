@@ -17911,13 +17911,13 @@ Promise.allSettled([
   const fiveSimResult = results[1];
   const nexSmsResult = results[2];
   if (heroResult?.status === 'rejected') {
-    console.debug('HeroSMS country list startup fallback skipped:', heroResult.reason);
+    console.debug('HeroSMS country list startup load skipped:', heroResult.reason);
   }
   if (fiveSimResult?.status === 'rejected') {
-    console.debug('5sim country list startup fallback skipped:', fiveSimResult.reason);
+    console.debug('5sim country list startup load skipped:', fiveSimResult.reason);
   }
   if (nexSmsResult?.status === 'rejected') {
-    console.debug('NexSMS country list startup fallback skipped:', nexSmsResult.reason);
+    console.debug('NexSMS country list startup load skipped:', nexSmsResult.reason);
   }
   return restoreState().then(() => {
     syncPasswordToggleLabel();

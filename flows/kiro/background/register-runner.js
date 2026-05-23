@@ -437,6 +437,59 @@
       await chrome.tabs.update(tabId, { active: true });
     }
 
+    async function isSpecificTabAlive(tabId) {
+      if (!Number.isInteger(tabId) || !chrome?.tabs?.get) {
+        return false;
+      }
+      return Boolean(await chrome.tabs.get(tabId).catch(() => null));
+    }
+
+    function isKiroRegisterCandidateUrl(rawUrl = '') {
+      let parsed = null;
+      try {
+        parsed = new URL(String(rawUrl || '').trim());
+      } catch (_error) {
+        return false;
+      }
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return false;
+      }
+      const hostname = parsed.hostname.toLowerCase();
+      return hostname === 'app.kiro.dev'
+        || hostname === 'kiro.dev'
+        || hostname === 'view.awsapps.com'
+        || hostname === 'login.awsapps.com'
+        || hostname === 'profile.aws.amazon.com'
+        || hostname === 'profile.aws'
+        || hostname.endsWith('.profile.aws.amazon.com')
+        || hostname.endsWith('.profile.aws')
+        || hostname === 'signin.aws.amazon.com'
+        || hostname === 'signin.aws'
+        || hostname.endsWith('.signin.aws.amazon.com')
+        || hostname.endsWith('.signin.aws');
+    }
+
+    async function getActiveKiroRegisterTabId() {
+      if (!chrome?.tabs?.query) {
+        return null;
+      }
+      const queryAttempts = [
+        { active: true, lastFocusedWindow: true },
+        { active: true, currentWindow: true },
+        { active: true },
+      ];
+      for (const queryInfo of queryAttempts) {
+        const tabs = await chrome.tabs.query(queryInfo).catch(() => []);
+        const matchedTab = (Array.isArray(tabs) ? tabs : []).find((tab) => (
+          Number.isInteger(tab?.id) && isKiroRegisterCandidateUrl(tab?.url)
+        ));
+        if (Number.isInteger(matchedTab?.id)) {
+          return matchedTab.id;
+        }
+      }
+      return null;
+    }
+
     async function getExecutionState(state = {}) {
       if (state && typeof state === 'object' && !Array.isArray(state) && Object.keys(state).length) {
         return state;
@@ -509,8 +562,20 @@
         : await getTabId(KIRO_REGISTER_PAGE_SOURCE_ID);
       const loginUrl = cleanString(runtimeState.register?.loginUrl);
 
-      if (Number.isInteger(tabId) && await isTabAlive(KIRO_REGISTER_PAGE_SOURCE_ID)) {
+      if (Number.isInteger(tabId) && await isSpecificTabAlive(tabId)) {
+        await registerTab(KIRO_REGISTER_PAGE_SOURCE_ID, tabId);
         return tabId;
+      }
+
+      const activeKiroTabId = await getActiveKiroRegisterTabId();
+      if (Number.isInteger(activeKiroTabId)) {
+        await registerTab(KIRO_REGISTER_PAGE_SOURCE_ID, activeKiroTabId);
+        await setState(mergeRuntimePatch(state, {
+          session: {
+            registerTabId: activeKiroTabId,
+          },
+        }));
+        return activeKiroTabId;
       }
 
       if (!loginUrl) {
@@ -534,6 +599,73 @@
       const tabId = await ensureKiroRegisterTab(state, options);
       await activateTab(tabId);
       return tabId;
+    }
+
+    async function injectKiroRegisterContentScripts(tabId) {
+      if (
+        !Number.isInteger(tabId)
+        || !chrome?.scripting?.executeScript
+        || !Array.isArray(KIRO_REGISTER_INJECT_FILES)
+        || !KIRO_REGISTER_INJECT_FILES.length
+      ) {
+        return false;
+      }
+
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: (injectedSource) => {
+          window.__MULTIPAGE_SOURCE = injectedSource;
+        },
+        args: [KIRO_REGISTER_PAGE_SOURCE_ID],
+      });
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: KIRO_REGISTER_INJECT_FILES,
+      });
+      await sleepWithStop(250);
+      return true;
+    }
+
+    function hasKiroRegisterPageState(result = {}) {
+      return Boolean(result && typeof result === 'object' && cleanString(result.state));
+    }
+
+    async function sendKiroStateDriverMessage(tabId, message, options = {}) {
+      const {
+        timeoutBudget,
+        timeoutMs = 30000,
+      } = options;
+      let result = await sendToContentScriptResilient(KIRO_REGISTER_PAGE_SOURCE_ID, message, {
+        timeoutMs,
+        retryDelayMs: 700,
+        onRetryableError: buildKiroRetryRecovery(tabId, {
+          ...options,
+          timeoutBudget,
+        }),
+        logMessage: options.readyLogMessage || '正在等待 Kiro 页面进入下一状态...',
+      });
+
+      if (!hasKiroRegisterPageState(result) && !result?.error) {
+        await log('Kiro 注册页通用脚本已响应，但专用页面识别脚本未返回状态，正在重新注入 Kiro 注册页识别脚本...', 'warn');
+        await injectKiroRegisterContentScripts(tabId);
+        result = await sendToContentScriptResilient(KIRO_REGISTER_PAGE_SOURCE_ID, message, {
+          timeoutMs: timeoutBudget?.getRemainingMs?.(1000) || timeoutMs,
+          retryDelayMs: 700,
+          onRetryableError: buildKiroRetryRecovery(tabId, {
+            ...options,
+            timeoutBudget,
+          }),
+          logMessage: options.readyLogMessage || '正在等待 Kiro 页面进入下一状态...',
+        });
+      }
+
+      if (result?.error) {
+        throw new Error(result.error);
+      }
+      if (!hasKiroRegisterPageState(result)) {
+        throw new Error('Kiro 注册页专用页面识别脚本未返回页面状态，请刷新当前 AWS 页面或重新执行当前步骤。');
+      }
+      return result;
     }
 
     async function reattachKiroRegisterPage(tabId, options = {}) {
@@ -610,7 +742,7 @@
         };
       }
       const stateWaitTimeoutMs = timeoutBudget.getRemainingMs(1000);
-      const result = await sendToContentScriptResilient(KIRO_REGISTER_PAGE_SOURCE_ID, {
+      const message = {
         type: 'ENSURE_KIRO_PAGE_STATE',
         step: options.step || 0,
         source: 'background',
@@ -620,19 +752,13 @@
           retryDelayMs: Number(options.pageRetryDelayMs) || 250,
           timeoutMessage: options.timeoutMessage || '',
         },
-      }, {
+      };
+
+      return sendKiroStateDriverMessage(tabId, message, {
+        ...options,
+        timeoutBudget,
         timeoutMs: stateWaitTimeoutMs,
-        retryDelayMs: 700,
-        onRetryableError: buildKiroRetryRecovery(tabId, {
-          ...options,
-          timeoutBudget,
-        }),
-        logMessage: options.readyLogMessage || '正在等待 Kiro 页面进入下一状态...',
       });
-      if (result?.error) {
-        throw new Error(result.error);
-      }
-      return result || { state: '', url: '' };
     }
 
     async function waitForKiroPageChange(tabId, options = {}) {
@@ -665,7 +791,7 @@
         return { state: '', url: '' };
       }
       const stateWaitTimeoutMs = timeoutBudget.getRemainingMs(1000);
-      const result = await sendToContentScriptResilient(KIRO_REGISTER_PAGE_SOURCE_ID, {
+      const message = {
         type: 'ENSURE_KIRO_STATE_CHANGE',
         step: options.step || 0,
         source: 'background',
@@ -676,19 +802,13 @@
           returnOnCodeInvalid: Boolean(options.returnOnCodeInvalid),
           timeoutMessage: options.timeoutMessage || '',
         },
-      }, {
+      };
+      return sendKiroStateDriverMessage(tabId, message, {
+        ...options,
+        timeoutBudget,
         timeoutMs: stateWaitTimeoutMs,
-        retryDelayMs: 700,
-        onRetryableError: buildKiroRetryRecovery(tabId, {
-          ...options,
-          timeoutBudget,
-        }),
-        logMessage: options.readyLogMessage || '正在等待 Kiro 页面完成跳转...',
+        readyLogMessage: options.readyLogMessage || '正在等待 Kiro 页面完成跳转...',
       });
-      if (result?.error) {
-        throw new Error(result.error);
-      }
-      return result || { state: '', url: '' };
     }
 
     async function readKiroRegisterPageState(tabId, options = {}) {
@@ -702,14 +822,12 @@
       return KIRO_REGISTER_EXISTING_ACCOUNT_STATES.includes(cleanString(pageState));
     }
 
-    function resolveKiroRegisterEmail(currentState = {}, pageState = {}, fallbackEmail = '') {
-      const runtimeState = readKiroRuntime(currentState);
+    function resolveKiroRegisterEmail(currentState = {}, _pageState = {}, fallbackEmail = '') {
       return cleanString(
         fallbackEmail
-        || pageState?.email
-        || pageState?.accountEmail
-        || runtimeState.register?.email
         || currentState?.email
+        || currentState?.registrationEmailState?.current
+        || currentState?.registrationEmailState?.previous
       ).toLowerCase();
     }
 
@@ -878,8 +996,7 @@
     }
 
     function buildKiroVerificationPollPayload(step, state = {}, mail = {}, filterAfterTimestamp = 0) {
-      const runtimeState = readKiroRuntime(state);
-      const targetEmail = cleanString(runtimeState.register?.email || state?.email).toLowerCase();
+      const targetEmail = resolveKiroRegisterEmail(state);
       const targetEmailHints = targetEmail ? [targetEmail] : [];
       const isMail2925Provider = String(mail?.provider || '').trim().toLowerCase() === '2925';
       const normalizedProvider = String(mail?.provider || '').trim().toLowerCase();
