@@ -515,6 +515,7 @@ test('contribution oauth manager starts session, opens auth url, submits callbac
   );
 
   const manager = api.createContributionOAuthManager({
+    apiBaseUrl: 'https://contribution.example.test/oauth/api',
     addLog: async () => {},
     broadcastDataUpdate(updates) {
       broadcasts.push(updates);
@@ -619,6 +620,7 @@ test('contribution oauth manager deduplicates concurrent callback captures for t
   );
 
   const manager = api.createContributionOAuthManager({
+    apiBaseUrl: 'https://contribution.example.test/oauth/api',
     addLog: async () => {},
     broadcastDataUpdate(updates) {
       broadcasts.push(updates);
@@ -686,6 +688,7 @@ test('contribution oauth manager ignores tabs.onUpdated events without a real ur
   );
 
   const manager = api.createContributionOAuthManager({
+    apiBaseUrl: 'https://contribution.example.test/oauth/api',
     addLog: async () => {},
     broadcastDataUpdate(updates) {
       currentState = { ...currentState, ...updates };
@@ -733,6 +736,7 @@ test('contribution oauth manager accepts localhost callback urls that contain er
   );
 
   const manager = api.createContributionOAuthManager({
+    apiBaseUrl: 'https://contribution.example.test/oauth/api',
     chrome: {
       tabs: {
         onUpdated: { addListener() {} },
@@ -797,6 +801,7 @@ test('contribution oauth manager switches Plus contribution traffic to sub2api o
   );
 
   const manager = api.createContributionOAuthManager({
+    apiBaseUrl: 'https://contribution.example.test/oauth/api',
     chrome: {
       tabs: {
         async create(payload) {

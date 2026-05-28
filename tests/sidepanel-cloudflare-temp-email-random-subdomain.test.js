@@ -79,22 +79,25 @@ test('sidepanel modal message preserves line breaks and supports inline links', 
   assert.match(css, /\.modal-message a,\s*[\s\S]*\.modal-alert a/);
 });
 
-test('openCloudflareTempEmailUsageGuidePage opens the contribution portal home page', () => {
+test('openCloudflareTempEmailUsageGuidePage points users to local docs without opening the author portal', () => {
   const bundle = extractFunction('openCloudflareTempEmailUsageGuidePage');
 
   const api = new Function(`
 const openedUrls = [];
-function getContributionPortalUrl() { return 'https://flowpilot.qlhazycoder.top'; }
+const toasts = [];
 function openExternalUrl(url) { openedUrls.push(url); }
+function showToast(message, type, duration) { toasts.push({ message, type, duration }); }
 ${bundle}
 return {
   openedUrls,
+  toasts,
   openCloudflareTempEmailUsageGuidePage,
 };
   `)();
 
   api.openCloudflareTempEmailUsageGuidePage();
-  assert.deepEqual(api.openedUrls, ['https://flowpilot.qlhazycoder.top']);
+  assert.deepEqual(api.openedUrls, []);
+  assert.match(api.toasts[0].message, /docs\/使用教程\/分部分\/03-Cloudflare-Temp-Email-使用说明\.md/);
 });
 
 test('openCloudflareTempEmailUsageGuidePage skips opening when the contribution portal URL is empty', () => {
@@ -102,17 +105,20 @@ test('openCloudflareTempEmailUsageGuidePage skips opening when the contribution 
 
   const api = new Function(`
 const openedUrls = [];
-function getContributionPortalUrl() { return ''; }
+const toasts = [];
 function openExternalUrl(url) { openedUrls.push(url); }
+function showToast(message, type, duration) { toasts.push({ message, type, duration }); }
 ${bundle}
 return {
   openedUrls,
+  toasts,
   openCloudflareTempEmailUsageGuidePage,
 };
   `)();
 
   api.openCloudflareTempEmailUsageGuidePage();
   assert.deepEqual(api.openedUrls, []);
+  assert.equal(api.toasts.length, 1);
 });
 
 test('openCloudflareTempEmailRepositoryPage opens the extension author repository', () => {

@@ -5,7 +5,7 @@
   const FLOW_ID = artifactApi.FLOW_ID || 'kiro';
   const ADAPTER_ID = artifactApi.ADAPTER_ID || 'kiro-builder-id';
   const ARTIFACT_KIND = artifactApi.ARTIFACT_KIND || 'kiro-builder-id';
-  const DEFAULT_CONTRIBUTION_API_URL = 'https://flowpilot.qlhazycoder.top/api/contributions';
+  const DEFAULT_CONTRIBUTION_API_URL = '';
 
   function isPlainObject(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -36,7 +36,7 @@
   function normalizeContributionApiUrl(value = '') {
     const normalized = cleanString(value).replace(/\/+$/, '');
     if (!normalized) {
-      return DEFAULT_CONTRIBUTION_API_URL;
+      return '';
     }
     if (/\/api\/contributions$/i.test(normalized)) {
       return normalized;
@@ -85,6 +85,9 @@
       throw new Error('账号贡献提交能力缺少 fetch。');
     }
     const endpoint = normalizeContributionApiUrl(options.apiUrl);
+    if (!endpoint) {
+      throw new Error('账号贡献远程服务未配置。');
+    }
     const payload = {
       flow: FLOW_ID,
       adapter_id: ADAPTER_ID,

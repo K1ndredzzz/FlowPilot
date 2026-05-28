@@ -130,10 +130,6 @@ function shouldWarnAutoRunFallbackRisk() { return false; }
 function isAutoRunFallbackRiskPromptDismissed() { return false; }
 async function openAutoRunFallbackRiskConfirmModal() { throw new Error('should not be called'); }
 function setAutoRunFallbackRiskPromptDismissed() {}
-async function refreshContributionContentHint() {
-  events.push({ type: 'refresh' });
-  ${refreshImpl ? 'return (' + refreshImpl + ')();' : 'return null;'}
-}
 async function ensureGpcApiKeyReadyForStart() {
   return true;
 }
@@ -147,7 +143,7 @@ return {
 `)();
 }
 
-test('startAutoRunFromCurrentSettings kicks off contribution content refresh without blocking auto run', async () => {
+test('startAutoRunFromCurrentSettings does not refresh contribution content before auto run', async () => {
   const api = createApi();
 
   const result = await api.startAutoRunFromCurrentSettings();
@@ -155,57 +151,9 @@ test('startAutoRunFromCurrentSettings kicks off contribution content refresh wit
   assert.equal(result, true);
   assert.deepEqual(
     api.getEvents().map((entry) => entry.type),
-    ['refresh', 'sync-settings', 'send']
+    ['sync-settings', 'send']
   );
-  assert.equal(api.getEvents()[2].message.type, 'AUTO_RUN');
-});
-
-test('startAutoRunFromCurrentSettings continues auto run when contribution content refresh fails', async () => {
-  const api = createApi({
-    refreshImpl: 'async () => { throw new Error("refresh failed"); }',
-  });
-
-  const result = await api.startAutoRunFromCurrentSettings();
-  const events = api.getEvents();
-
-  assert.equal(result, true);
-  assert.deepEqual(
-    events.map((entry) => entry.type),
-    ['refresh', 'sync-settings', 'send', 'warn']
-  );
-  assert.equal(events[2].message.type, 'AUTO_RUN');
-  assert.match(String(events[3].args[0]), /Failed to refresh contribution content hint before auto run/);
-});
-
-test('startAutoRunFromCurrentSettings does not wait for a hanging contribution content refresh', async () => {
-  const api = createApi({
-    refreshImpl: '() => new Promise(() => {})',
-  });
-
-  const result = await api.startAutoRunFromCurrentSettings();
-
-  assert.equal(result, true);
-  assert.deepEqual(
-    api.getEvents().map((entry) => entry.type),
-    ['refresh', 'sync-settings', 'send']
-  );
-});
-
-test('startAutoRunFromCurrentSettings does not block auto run when contribution content has updates', async () => {
-  const api = createApi({
-    refreshImpl: `async () => ({
-      promptVersion: 'questionnaire:2026-04-23T00:00:00Z',
-      items: [{ slug: 'questionnaire', isVisible: true }],
-    })`,
-  });
-
-  const result = await api.startAutoRunFromCurrentSettings();
-
-  assert.equal(result, true);
-  assert.deepEqual(
-    api.getEvents().map((entry) => entry.type),
-    ['refresh', 'sync-settings', 'send']
-  );
+  assert.equal(api.getEvents()[1].message.type, 'AUTO_RUN');
 });
 
 test('startAutoRunFromCurrentSettings freezes run count before async settings sync can repaint it', async () => {
@@ -223,9 +171,9 @@ test('startAutoRunFromCurrentSettings freezes run count before async settings sy
   assert.equal(result, true);
   assert.deepEqual(
     events.map((entry) => entry.type),
-    ['refresh', 'sync-settings', 'stale-status-reset', 'send']
+    ['sync-settings', 'stale-status-reset', 'send']
   );
-  assert.equal(events[3].message.payload.totalRuns, 20);
+  assert.equal(events[2].message.payload.totalRuns, 20);
 });
 
 test('startAutoRunFromCurrentSettings sends current flow selection with auto run payload', async () => {
@@ -319,10 +267,6 @@ function shouldWarnAutoRunFallbackRisk() { return false; }
 function isAutoRunFallbackRiskPromptDismissed() { return false; }
 async function openAutoRunFallbackRiskConfirmModal() { throw new Error('should not be called'); }
 function setAutoRunFallbackRiskPromptDismissed() {}
-async function refreshContributionContentHint() {
-  events.push({ type: 'refresh' });
-  return null;
-}
 async function ensureGpcApiKeyReadyForStart() {
   return true;
 }
@@ -342,7 +286,7 @@ return {
 
   assert.deepEqual(
     api.getEvents().map((entry) => entry.type),
-    ['refresh', 'sync-settings']
+    ['sync-settings']
   );
 });
 

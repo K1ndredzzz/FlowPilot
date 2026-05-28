@@ -103,15 +103,15 @@ test('contribution mode manager does not project openai-only ui state into kiro 
   assert.equal(dom.selectPanelMode.disabled, false);
   assert.equal(dom.selectPanelMode.value, '');
   assert.equal(dom.btnContributionMode.disabled, false);
-  assert.equal(dom.btnContributionMode.title, '打开当前 flow 教程；当前已在贡献模式');
+  assert.equal(dom.btnContributionMode.title, '当前已在贡献模式');
   assert.equal(dom.btnStartContribution.disabled, false);
   assert.equal(dom.btnOpenContributionUpload.hidden, false);
   assert.equal(dom.btnOpenContributionUpload.disabled, false);
-  assert.equal(dom.btnOpenContributionUpload.textContent, '已有认证文件？前往上传');
+  assert.equal(dom.btnOpenContributionUpload.textContent, '已有认证文件');
   assert.equal(rowVpsUrl.classList.hiddenState, false);
 });
 
-test('combined contribution tutorial button opens current flow page and enables current flow adapter', async () => {
+test('combined contribution button enables current flow adapter without opening author portal', async () => {
   const windowObject = {};
   const api = new Function(
     'self',
@@ -202,14 +202,14 @@ test('combined contribution tutorial button opens current flow page and enables 
       },
     },
     constants: {
-      contributionPortalUrl: 'https://flowpilot.qlhazycoder.top',
+      contributionPortalUrl: '',
     },
   });
 
   manager.bindEvents();
   await dom.btnContributionMode.listeners.click();
 
-  assert.deepEqual(openedUrls, ['https://flowpilot.qlhazycoder.top/tutorial?flow=kiro&target=kiro-rs']);
+  assert.deepEqual(openedUrls, []);
   assert.equal(sentMessages[0].type, 'SET_ACCOUNT_CONTRIBUTION_MODE');
   assert.deepEqual(sentMessages[0].payload, {
     enabled: true,

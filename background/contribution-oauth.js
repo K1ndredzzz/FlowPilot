@@ -1,7 +1,7 @@
 (function attachBackgroundContributionOAuth(root, factory) {
   root.MultiPageBackgroundContributionOAuth = factory();
 })(typeof self !== 'undefined' ? self : globalThis, function createBackgroundContributionOAuthModule() {
-  const API_BASE_URL = 'https://flowpilot.qlhazycoder.top/oauth/api';
+  const API_BASE_URL = '';
   const ACTIVE_STATUSES = new Set(['started', 'waiting', 'processing']);
   const FINAL_STATUSES = new Set(['auto_approved', 'auto_rejected', 'manual_review_required', 'expired', 'error']);
   const CALLBACK_FINAL_STATUSES = new Set(['submitted']);
@@ -38,6 +38,7 @@
       chrome,
       closeLocalhostCallbackTabs,
       createAutomationTab = null,
+      apiBaseUrl = API_BASE_URL,
       getState,
       setState,
     } = deps;
@@ -185,12 +186,16 @@
     }
 
     async function fetchContributionJson(endpoint, options = {}) {
+      const baseUrl = normalizeString(options.apiBaseUrl || apiBaseUrl).replace(/\/+$/, '');
+      if (!baseUrl) {
+        throw new Error('贡献远程服务未配置。');
+      }
       const controller = new AbortController();
       const timeoutMs = Math.max(1000, Math.floor(Number(options.timeoutMs) || 15000));
       const timer = setTimeout(() => controller.abort(), timeoutMs);
 
       try {
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        const response = await fetch(`${baseUrl}${endpoint}`, {
           method: options.method || 'GET',
           headers: {
             Accept: 'application/json',

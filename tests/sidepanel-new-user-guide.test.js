@@ -102,7 +102,7 @@ return {
   assert.equal(api.shouldPromptNewUserGuide(), false);
 });
 
-test('new user guide prompt persists dismissal before awaiting the user choice and opens the contribution page on confirm', async () => {
+test('new user guide prompt persists dismissal without opening the original author portal', async () => {
   const bundle = [
     extractFunction('isPromptDismissed'),
     extractFunction('setPromptDismissed'),
@@ -130,7 +130,7 @@ const localStorage = {
 };
 const btnContributionMode = { disabled: false };
 const latestState = { accountContributionEnabled: false };
-const contributionContentService = { portalUrl: 'https://flowpilot.qlhazycoder.top' };
+const contributionContentService = { portalUrl: '' };
 const openedUrls = [];
 let modalOptions = null;
 let nextChoice = 'confirm';
@@ -164,19 +164,19 @@ return {
 
   assert.equal(confirmed, true);
   assert.equal(api.getDismissed(), '1');
-  assert.deepStrictEqual(api.getOpenedUrls(), ['https://flowpilot.qlhazycoder.top']);
+  assert.deepStrictEqual(api.getOpenedUrls(), []);
   assert.equal(modalOptions.title, '新手引导');
   assert.equal(modalOptions.alert.text, '本提示仅出现一次。');
   assert.deepStrictEqual(
     modalOptions.actions.map((item) => ({ id: item.id, label: item.label })),
     [
       { id: null, label: '取消' },
-      { id: 'confirm', label: '查看引导' },
+      { id: 'confirm', label: '知道了' },
     ]
   );
 
   api.setNextChoice(null);
   const skipped = await api.maybeShowNewUserGuidePrompt();
   assert.equal(skipped, false);
-  assert.deepStrictEqual(api.getOpenedUrls(), ['https://flowpilot.qlhazycoder.top']);
+  assert.deepStrictEqual(api.getOpenedUrls(), []);
 });

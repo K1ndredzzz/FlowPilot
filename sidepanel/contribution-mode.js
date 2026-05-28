@@ -15,8 +15,8 @@
       constants = {},
     } = context;
 
-    const contributionPortalUrl = constants.contributionPortalUrl || 'https://flowpilot.qlhazycoder.top';
-    const contributionUploadUrl = constants.contributionUploadUrl || 'https://flowpilot.qlhazycoder.top/upload';
+    const contributionPortalUrl = constants.contributionPortalUrl || '';
+    const contributionUploadUrl = constants.contributionUploadUrl || '';
     const pollIntervalMs = Math.max(1500, Math.floor(Number(constants.pollIntervalMs) || 2500));
 
     const hiddenRows = [
@@ -206,8 +206,8 @@
       }
       dom.btnContributionMode.disabled = actionInFlight;
       dom.btnContributionMode.title = enabled
-        ? '打开当前 flow 教程；当前已在贡献模式'
-        : (blocked ? '打开当前 flow 教程；当前流程运行中暂时不能进入贡献模式' : '打开当前 flow 教程并进入贡献模式');
+        ? '当前已在贡献模式'
+        : (blocked ? '当前流程运行中暂时不能进入贡献模式' : '进入贡献模式');
     }
 
     function stopPolling() {
@@ -331,14 +331,6 @@
 
     function getContributionUploadPageUrl() {
       return normalizeString(contributionUploadUrl || contributionPortalUrl);
-    }
-
-    function openContributionPortalPage() {
-      const targetUrl = getContributionPortalPageUrl();
-      if (!targetUrl) {
-        return;
-      }
-      helpers.openExternalUrl?.(targetUrl);
     }
 
     function openContributionUploadPage() {
@@ -525,7 +517,7 @@
       if (dom.btnOpenContributionUpload) {
         dom.btnOpenContributionUpload.hidden = !available;
         dom.btnOpenContributionUpload.disabled = !available;
-        dom.btnOpenContributionUpload.textContent = '已有认证文件？前往上传';
+        dom.btnOpenContributionUpload.textContent = '已有认证文件';
       }
 
       if (dom.btnExitContributionMode) {
@@ -554,17 +546,12 @@
           return;
         }
         actionInFlight = true;
-        try {
-          openContributionPortalPage();
-        } catch (error) {
-          helpers.showToast?.(`打开官网页面失败：${error.message}`, 'error');
-        }
         render();
         try {
           if (isContributionModeEnabled()) {
-            helpers.showToast?.('已打开当前 flow 教程。', 'info', 1800);
+            helpers.showToast?.('当前已在贡献模式。', 'info', 1800);
           } else if (isModeSwitchBlocked()) {
-            helpers.showToast?.('已打开当前 flow 教程；当前流程运行中，暂时不能进入贡献模式。', 'warning', 2200);
+            helpers.showToast?.('当前流程运行中，暂时不能进入贡献模式。', 'warning', 2200);
           } else {
             await enterContributionMode();
           }

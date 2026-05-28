@@ -1101,7 +1101,7 @@ const DEFAULT_LUCKMAIL_EMAIL_TYPE = 'ms_graph';
 const DEFAULT_YYDS_MAIL_BASE_URL = window.YydsMailUtils?.DEFAULT_YYDS_MAIL_BASE_URL || 'https://maliapi.215.im/v1';
 const DISPLAY_TIMEZONE = 'Asia/Shanghai';
 const DEFAULT_ACCOUNT_RUN_HISTORY_HELPER_BASE_URL = 'http://127.0.0.1:17373';
-const CONTRIBUTION_UPLOAD_URL = 'https://flowpilot.qlhazycoder.top/';
+const CONTRIBUTION_UPLOAD_URL = '';
 const DEFAULT_PHONE_VERIFICATION_ENABLED = false;
 const DEFAULT_HERO_SMS_COUNTRY_ID = 52;
 const DEFAULT_HERO_SMS_COUNTRY_LABEL = 'Thailand';
@@ -2245,7 +2245,7 @@ function shouldPromptNewUserGuide() {
 }
 
 function getContributionPortalUrl() {
-  return String(contributionContentService?.portalUrl || 'https://flowpilot.qlhazycoder.top').trim();
+  return String(contributionContentService?.portalUrl || '').trim();
 }
 
 function getContributionContentFlowId(state = latestState) {
@@ -2263,13 +2263,13 @@ function getContributionContentTargetId(state = latestState) {
 function openNewUserGuidePrompt() {
   return openActionModal({
     title: '新手引导',
-    message: '如果你是第一次使用，可以先查看贡献页里的公告和使用教程。点击“查看引导”会自动打开贡献页面。',
+    message: '如果你是第一次使用，请先按本地文档完成基础配置。',
     alert: {
       text: '本提示仅出现一次。',
     },
     actions: [
       { id: null, label: '取消', variant: 'btn-ghost' },
-      { id: 'confirm', label: '查看引导', variant: 'btn-primary' },
+      { id: 'confirm', label: '知道了', variant: 'btn-primary' },
     ],
   });
 }
@@ -2282,7 +2282,6 @@ async function maybeShowNewUserGuidePrompt() {
   setNewUserGuidePromptDismissed(true);
   const choice = await openNewUserGuidePrompt();
   if (choice === 'confirm') {
-    openExternalUrl(getContributionPortalUrl());
     return true;
   }
   return false;
@@ -11721,11 +11720,7 @@ function ignoreCurrentReleaseUpdate() {
 }
 
 function openCloudflareTempEmailUsageGuidePage() {
-  const targetUrl = getContributionPortalUrl();
-  if (!targetUrl) {
-    return;
-  }
-  openExternalUrl(targetUrl);
+  showToast('请查看本地 docs/使用教程/分部分/03-Cloudflare-Temp-Email-使用说明.md。', 'info', 2400);
 }
 
 function openCloudflareTempEmailRepositoryPage() {
@@ -14293,9 +14288,9 @@ const accountContributionManager = window.SidepanelContributionMode?.createContr
     sendMessage: (message) => chrome.runtime.sendMessage(message),
   },
   constants: {
-    contributionOauthUrl: `${String(contributionContentService?.portalUrl || 'https://flowpilot.qlhazycoder.top').replace(/\/+$/, '')}/oauth/`,
-    contributionPortalUrl: String(contributionContentService?.portalUrl || 'https://flowpilot.qlhazycoder.top').replace(/\/+$/, ''),
-    contributionUploadUrl: `${String(contributionContentService?.portalUrl || 'https://flowpilot.qlhazycoder.top').replace(/\/+$/, '')}/upload`,
+    contributionOauthUrl: '',
+    contributionPortalUrl: String(contributionContentService?.portalUrl || '').replace(/\/+$/, ''),
+    contributionUploadUrl: '',
   },
 });
 const baseRenderAccountContribution = accountContributionManager?.render
@@ -14782,11 +14777,6 @@ async function startAutoRunFromCurrentSettings() {
     ? initialLockedRunCount
     : getRunCountValue();
   registerPendingAutoRunStartRunCount(requestedTotalRuns);
-
-  // 站点内容刷新只影响提示/广告展示，不应阻塞自动流程启动。
-  refreshContributionContentHint().catch((error) => {
-    console.warn('Failed to refresh contribution content hint before auto run:', error);
-  });
 
   if (typeof persistCurrentSettingsForAction === 'function') {
     await persistCurrentSettingsForAction();

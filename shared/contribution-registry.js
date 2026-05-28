@@ -150,7 +150,10 @@
   }
 
   function buildPortalPageUrl(portalBaseUrl = '', portalPath = '/tutorial', params = {}) {
-    const baseUrl = normalizeString(portalBaseUrl).replace(/\/+$/, '') || 'https://flowpilot.qlhazycoder.top';
+    const baseUrl = normalizeString(portalBaseUrl).replace(/\/+$/, '');
+    if (!baseUrl) {
+      return '';
+    }
     const path = normalizeString(portalPath) || '/tutorial';
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     const query = Object.entries(params)

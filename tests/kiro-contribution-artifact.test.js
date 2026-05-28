@@ -144,6 +144,7 @@ test('Kiro contribution adapter submits public contribution without requiring ki
   const statePatches = [];
   const adapter = adapterApi.createKiroBuilderIdContributionAdapter({
     addLog: async (message, level, options) => logs.push({ message, level, options }),
+    contributionApiUrl: 'https://contribution.example.test',
     fetchImpl: async (url, options) => {
       fetchCalls.push({ url, options });
       return {
@@ -164,7 +165,7 @@ test('Kiro contribution adapter submits public contribution without requiring ki
 
   assert.equal(result.ok, true);
   assert.equal(fetchCalls.length, 1);
-  assert.equal(fetchCalls[0].url, 'https://flowpilot.qlhazycoder.top/api/contributions');
+  assert.equal(fetchCalls[0].url, 'https://contribution.example.test/api/contributions');
   const requestBody = JSON.parse(fetchCalls[0].options.body);
   assert.equal(requestBody.flow, 'kiro');
   assert.equal(requestBody.adapter_id, 'kiro-builder-id');

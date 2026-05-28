@@ -1,8 +1,7 @@
 (() => {
-  const PORTAL_BASE_URL = 'https://flowpilot.qlhazycoder.top';
-  const CONTENT_SUMMARY_API_URL = `${PORTAL_BASE_URL}/api/content-summary`;
+  const PORTAL_BASE_URL = '';
+  const CONTENT_SUMMARY_API_URL = '';
   const CACHE_KEY_PREFIX = 'multipage-contribution-content-summary-v2';
-  const FETCH_TIMEOUT_MS = 6000;
 
   function normalizeScopeId(value = '', fallback = '') {
     return String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-') || fallback;
@@ -20,6 +19,9 @@
   }
 
   function buildSummaryApiUrl(scope = normalizeScope()) {
+    if (!CONTENT_SUMMARY_API_URL) {
+      return '';
+    }
     const url = new URL(CONTENT_SUMMARY_API_URL);
     url.searchParams.set('flow', scope.flowId);
     url.searchParams.set('target', scope.targetId);
@@ -111,39 +113,15 @@
 
   async function fetchContentSummary(options = {}) {
     const scope = normalizeScope(options);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-    try {
-      const response = await fetch(buildSummaryApiUrl(scope), {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-        },
-        cache: 'no-store',
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`内容摘要请求失败：${response.status}`);
-      }
-
-      const payload = await response.json();
-      if (!payload || payload.ok !== true) {
-        throw new Error('内容摘要返回格式异常');
-      }
-
-      const snapshot = buildSnapshot(payload, scope);
-      writeCache(snapshot, scope);
-      return snapshot;
-    } catch (error) {
-      if (error?.name === 'AbortError') {
-        throw new Error('内容摘要请求超时');
-      }
-      throw error;
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    const snapshot = buildSnapshot({
+      items: [],
+      prompt_version: '',
+      has_visible_updates: false,
+      latest_updated_at: '',
+      latest_updated_at_display: '',
+    }, scope);
+    writeCache(snapshot, scope);
+    return snapshot;
   }
 
   async function getContentUpdateSnapshot(options = {}) {
