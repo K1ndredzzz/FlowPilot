@@ -311,7 +311,7 @@ function clearTimeout(value) {
 async function persistSignupPhoneInputForAction() {
   phonePersistCalls += 1;
 }
-function updateSaveButtonState() {}
+function updateSettingsSaveState() {}
 function collectSettingsPayload() {
   return { luckmailApiKey: 'autofilled-key' };
 }

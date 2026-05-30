@@ -168,6 +168,7 @@ const selectCfDomain = { value: 'example.com' };
 const selectTempEmailDomain = { value: 'mail.example.com' };
 const selectPanelMode = { value: 'cpa' };
 function getSelectedPlusPaymentMethod() { return 'paypal'; }
+function normalizeGpcCardKeyInput(value = '') { return String(value || '').trim().toUpperCase(); }
 const inputVpsUrl = { value: '' };
 const inputVpsPassword = { value: '' };
 const inputSub2ApiUrl = { value: '' };
@@ -201,6 +202,15 @@ const inputTempEmailAdminAuth = { value: '' };
 const inputTempEmailCustomAuth = { value: '' };
 const inputTempEmailReceiveMailbox = { value: '' };
 const inputTempEmailUseRandomSubdomain = { checked: false };
+const inputTempEmailUseFixedSubdomain = { checked: false };
+const inputTempEmailSubdomainPrefix = { value: '' };
+function getSelectedCloudflareTempEmailSubdomainMode() {
+  if (inputTempEmailUseFixedSubdomain.checked) return 'fixed';
+  if (inputTempEmailUseRandomSubdomain.checked) return 'random';
+  return 'none';
+}
+const CLOUDFLARE_TEMP_EMAIL_SUBDOMAIN_MODE_RANDOM = 'random';
+const CLOUDFLARE_TEMP_EMAIL_SUBDOMAIN_MODE_FIXED = 'fixed';
 const inputAutoSkipFailures = { checked: false };
 const inputAutoSkipFailuresThreadIntervalMinutes = { value: '0' };
 const inputAutoStepDelaySeconds = { value: '' };
@@ -253,6 +263,7 @@ function normalizeLuckmailBaseUrl(value) { return String(value || '').trim(); }
 function normalizeLuckmailEmailType(value) { return String(value || '').trim() || 'ms_graph'; }
 function normalizeCloudflareTempEmailBaseUrlValue(value) { return String(value || '').trim(); }
 function normalizeCloudflareTempEmailReceiveMailboxValue(value) { return String(value || '').trim(); }
+function normalizeCloudflareTempEmailSubdomainPrefixValue(value) { return String(value || '').trim().toLowerCase(); }
 function normalizeAccountRunHistoryHelperBaseUrlValue(value) { return String(value || '').trim(); }
 function normalizeAutoRunThreadIntervalMinutes(value) { return Number(value) || 0; }
 function normalizeAutoStepDelaySeconds(value) { return value === '' ? null : Number(value); }

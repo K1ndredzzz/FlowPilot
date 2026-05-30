@@ -38,14 +38,12 @@ test('sidepanel html exposes flow selector and kiro source fields', () => {
     'id="select-flow"',
     '<option value="grok">Grok</option>',
     'id="label-source-selector"',
-    'id="btn-open-webchat2api-github"',
+    'id="btn-open-target-repository"',
     'id="row-step6-cookie-settings"',
     'id="row-shared-auto-run"',
     'id="row-auto-run-thread-interval"',
     'id="row-oauth-callback"',
-    'id="row-settings-actions"',
     'id="row-kiro-rs-url"',
-    'id="btn-open-kiro-rs-github"',
     'id="row-kiro-rs-key"',
     'id="btn-test-kiro-rs"',
     'id="row-kiro-rs-test-status"',
@@ -65,6 +63,12 @@ test('sidepanel html exposes flow selector and kiro source fields', () => {
     assert.match(sidepanelHtml, new RegExp(snippet.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   });
   assert.doesNotMatch(sidepanelHtml, /id="btn-export-grok-sso"/);
+  assert.match(
+    sidepanelHtml,
+    /id="btn-open-target-repository"[^>]*class="btn btn-outline btn-sm data-inline-btn"[^>]*>GitHub<\/button>/
+  );
+  const repositoryButtonTag = sidepanelHtml.match(/<button[^>]*id="btn-open-target-repository"[\s\S]*?<\/button>/)?.[0] || '';
+  assert.doesNotMatch(repositoryButtonTag, /<svg/);
   assert.ok(
     sidepanelHtml.indexOf('<script src="../flows/kiro/workflow.js"></script>')
       < sidepanelHtml.indexOf('<script src="../flows/grok/index.js"></script>')
@@ -148,13 +152,57 @@ return {
   assert.equal(api.btnClearGrokSso.disabled, false);
 });
 
-test('sidepanel Kiro GitHub button opens the configured fork', () => {
-  assert.match(sidepanelSource, /openExternalUrl\('https:\/\/github\.com\/QLHazyCoder\/kiro\.rs'\)/);
+test('sidepanel project repository button resolves the configured target repositories', () => {
+  assert.match(sidepanelSource, /cpa:\s*'https:\/\/github\.com\/router-for-me\/CLIProxyAPI'/);
+  assert.match(sidepanelSource, /sub2api:\s*'https:\/\/github\.com\/Wei-Shaw\/sub2api'/);
+  assert.match(sidepanelSource, /'kiro-rs':\s*'https:\/\/github\.com\/QLHazyCoder\/kiro\.rs'/);
+  assert.match(sidepanelSource, /webchat2api:\s*'https:\/\/github\.com\/zqbxdev\/webchat2api'/);
   assert.doesNotMatch(sidepanelSource, /github\.com\/hank9999\/kiro\.rs/);
+  assert.match(sidepanelSource, /btnOpenTargetRepository\?\.addEventListener\('click'/);
 });
 
-test('sidepanel webchat2api GitHub button opens the configured repository', () => {
-  assert.match(sidepanelSource, /openExternalUrl\('https:\/\/github\.com\/zqbxdev\/webchat2api'\)/);
+test('sidepanel target repository helper switches URLs by current flow target', () => {
+  const bundle = [
+    extractFunction(sidepanelSource, 'getTargetRepositoryUrl'),
+  ].join('\n');
+
+  const api = new Function(`
+const TARGET_REPOSITORY_URLS = Object.freeze({
+  openai: Object.freeze({
+    cpa: 'https://github.com/router-for-me/CLIProxyAPI',
+    sub2api: 'https://github.com/Wei-Shaw/sub2api',
+  }),
+  kiro: Object.freeze({
+    'kiro-rs': 'https://github.com/QLHazyCoder/kiro.rs',
+  }),
+  grok: Object.freeze({
+    webchat2api: 'https://github.com/zqbxdev/webchat2api',
+  }),
+});
+function normalizeFlowId(value) {
+  return ['openai', 'kiro', 'grok'].includes(value) ? value : 'openai';
+}
+function getDefaultTargetIdForFlow(flowId) {
+  return flowId === 'grok' ? 'webchat2api' : (flowId === 'kiro' ? 'kiro-rs' : 'cpa');
+}
+function normalizeTargetIdForFlow(flowId, targetId, fallback) {
+  const targets = {
+    openai: ['cpa', 'sub2api', 'codex2api'],
+    kiro: ['kiro-rs'],
+    grok: ['webchat2api'],
+  }[flowId] || [];
+  return targets.includes(targetId) ? targetId : fallback;
+}
+function getSelectedFlowId() { return 'openai'; }
+function getSelectedTargetId() { return 'cpa'; }
+${bundle}
+return { getTargetRepositoryUrl };
+`)();
+
+  assert.equal(api.getTargetRepositoryUrl('openai', 'cpa'), 'https://github.com/router-for-me/CLIProxyAPI');
+  assert.equal(api.getTargetRepositoryUrl('openai', 'sub2api'), 'https://github.com/Wei-Shaw/sub2api');
+  assert.equal(api.getTargetRepositoryUrl('grok', 'webchat2api'), 'https://github.com/zqbxdev/webchat2api');
+  assert.equal(api.getTargetRepositoryUrl('openai', 'codex2api'), '');
 });
 
 test('sidepanel step definitions rerender when active flow changes even if plus/signup settings stay the same', () => {

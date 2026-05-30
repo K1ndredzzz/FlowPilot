@@ -1,6 +1,6 @@
 (function cloudMailProviderModule(root, factory) {
-  root.MultiPageBackgroundCloudMailProvider = factory();
-})(typeof self !== 'undefined' ? self : globalThis, function createCloudMailProviderModule() {
+  root.MultiPageBackgroundCloudMailProvider = factory(root);
+})(typeof self !== 'undefined' ? self : globalThis, function createCloudMailProviderModule(root = globalThis) {
   function createCloudMailProvider(deps = {}) {
     const {
       addLog = async () => {},
@@ -18,6 +18,7 @@
       normalizeCloudMailDomains,
       normalizeCloudMailMailApiMessages,
       persistRegistrationEmailState = null,
+      buildRandomNameDateTimeLocalPart = root.MultiPageEmailLocalPartHelpers?.buildRandomNameDateTimeLocalPart,
       pickVerificationMessageWithTimeFallback,
       setEmailState = async () => {},
       setPersistentSettings = async () => {},
@@ -172,6 +173,12 @@
       return chars.join('');
     }
 
+    function buildCloudMailNameDateTimeLocalPart(date = new Date()) {
+      return typeof buildRandomNameDateTimeLocalPart === 'function'
+        ? buildRandomNameDateTimeLocalPart(date)
+        : '';
+    }
+
     async function fetchCloudMailAddress(state, options = {}) {
       throwIfStopped();
       const latestState = state || await getState();
@@ -181,6 +188,7 @@
         requireDomain: true,
       });
       const requestedLocal = String(options.localPart || options.name || '').trim().toLowerCase()
+        || buildCloudMailNameDateTimeLocalPart(options.date)
         || generateCloudMailAliasLocalPart();
       const address = `${requestedLocal}@${ensuredConfig.domain}`.toLowerCase();
       const payload = { list: [{ email: address }] };
@@ -318,6 +326,7 @@
     }
 
     return {
+      buildCloudMailNameDateTimeLocalPart,
       ensureCloudMailConfig,
       ensureCloudMailToken,
       fetchCloudMailAddress,

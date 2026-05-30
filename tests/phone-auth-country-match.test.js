@@ -356,6 +356,68 @@ test('phone auth can auto-select country by dial code even when number has no pl
   }
 });
 
+test('phone auth rejects stale selected country when it does not match phone dial code', async () => {
+  const originalDocument = global.document;
+  const originalEvent = global.Event;
+  const originalLocation = global.location;
+
+  const dom = createFakeAddPhoneDom({
+    options: [
+      { value: 'TH', textContent: 'Thailand (+66)', buttonText: 'Thailand (+66)' },
+      { value: 'GB', textContent: 'United Kingdom (+44)', buttonText: 'United Kingdom (+44)' },
+    ],
+    selectedIndex: 0,
+  });
+
+  global.document = dom.document;
+  global.Event = class Event {
+    constructor(type) {
+      this.type = type;
+    }
+  };
+  global.location = { href: 'https://auth.openai.com/add-phone' };
+
+  try {
+    const helpers = api.createPhoneAuthHelpers({
+      fillInput: (element, value) => {
+        element.value = value;
+      },
+      getActionText: () => '',
+      getPageTextSnapshot: () => '',
+      getVerificationErrorText: () => '',
+      humanPause: async () => {},
+      isActionEnabled: () => true,
+      isAddPhonePageReady: () => true,
+      isConsentReady: () => false,
+      isPhoneVerificationPageReady: () => false,
+      isVisibleElement: () => true,
+      simulateClick: (element) => {
+        element.click?.();
+      },
+      sleep: async () => {},
+      throwIfStopped: () => {},
+      waitForElement: async () => null,
+    });
+
+    await assert.rejects(
+      () => helpers.submitPhoneNumber({
+        countryLabel: 'Country #10',
+        phoneNumber: '+84943328460',
+      }),
+      /Failed to select "Country #10" on the add-phone page\./
+    );
+
+    assert.equal(dom.select.value, 'TH');
+    assert.equal(dom.phoneInput.value, '');
+    assert.equal(dom.hiddenPhoneInput.value, '');
+    assert.equal(dom.wasSubmitClicked(), false);
+  } finally {
+    global.document = originalDocument;
+    global.Event = originalEvent;
+    global.location = originalLocation;
+  }
+});
+
 test('phone auth resend stops with PHONE_ROUTE_405_RECOVERY_FAILED instead of endless Try-again loop', async () => {
   const originalDocument = global.document;
   const originalLocation = global.location;

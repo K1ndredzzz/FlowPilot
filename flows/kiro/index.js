@@ -40,8 +40,7 @@
   },
   "baseGroups": [
     "kiro-runtime-status",
-    "shared-auto-run",
-    "shared-settings-actions"
+    "shared-auto-run"
   ],
   "targets": {
     "kiro-rs": {

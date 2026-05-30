@@ -523,6 +523,109 @@
         || status === 'skipped';
     }
 
+    function isPhoneSignupStepPayload(payload = {}, state = {}) {
+      const payloadIdentifierType = String(payload?.accountIdentifierType || '').trim().toLowerCase();
+      if (payloadIdentifierType === 'email') {
+        return false;
+      }
+      const stateIdentifierType = String(state?.accountIdentifierType || '').trim().toLowerCase();
+      return payloadIdentifierType === 'phone'
+        || Boolean(resolveSignupPhonePayload(payload))
+        || stateIdentifierType === 'phone'
+        || Boolean(String(state?.signupPhoneNumber || '').trim())
+        || Boolean(state?.signupPhoneActivation)
+        || Boolean(state?.signupPhoneCompletedActivation);
+    }
+
+    function isLoginPasswordPagePayload(payload = {}) {
+      const mode = String(payload?.passwordPageMode || '').trim().toLowerCase();
+      if (mode === 'login') {
+        return true;
+      }
+      const path = String(payload?.passwordPagePath || '').trim();
+      if (/\/log-in\/password(?:[/?#]|$)/i.test(path)) {
+        return true;
+      }
+      const rawUrl = String(payload?.passwordPageUrl || '').trim();
+      if (!rawUrl) {
+        return false;
+      }
+      try {
+        return /\/log-in\/password(?:[/?#]|$)/i.test(new URL(rawUrl).pathname || '');
+      } catch {
+        return /\/log-in\/password(?:[/?#]|$)/i.test(rawUrl);
+      }
+    }
+
+    function isSignupPasswordPagePayload(payload = {}) {
+      const mode = String(payload?.passwordPageMode || '').trim().toLowerCase();
+      if (mode === 'signup') {
+        return true;
+      }
+      const path = String(payload?.passwordPagePath || '').trim();
+      if (/\/(?:create-account|u\/signup|signup)\/password(?:[/?#]|$)/i.test(path)) {
+        return true;
+      }
+      const rawUrl = String(payload?.passwordPageUrl || '').trim();
+      if (!rawUrl) {
+        return false;
+      }
+      try {
+        return /\/(?:create-account|u\/signup|signup)\/password(?:[/?#]|$)/i.test(new URL(rawUrl).pathname || '');
+      } catch {
+        return /\/(?:create-account|u\/signup|signup)\/password(?:[/?#]|$)/i.test(rawUrl);
+      }
+    }
+
+    function shouldSkipPhoneSignupRegistrationTailAfterPassword(payload = {}, state = {}) {
+      if (!isPhoneSignupStepPayload(payload, state) || isSignupPasswordPagePayload(payload) || !isLoginPasswordPagePayload(payload)) {
+        return false;
+      }
+      const nextState = String(payload?.state || payload?.successState || '').trim().toLowerCase();
+      return Boolean(payload?.ready)
+        || Boolean(payload?.alreadyVerified)
+        || nextState === 'verification'
+        || nextState === 'verification_page'
+        || nextState === 'phone_verification_page'
+        || nextState === 'oauth_consent_page'
+        || nextState === 'logged_in_home';
+    }
+
+    async function skipPhoneSignupRegistrationTailAfterPassword(currentStep, payload = {}) {
+      const latestState = await getState();
+      const skippedSteps = [];
+      for (const stepKey of ['fetch-signup-code', 'fill-profile', 'wait-registration-success']) {
+        const skippedStep = findStepByKeyAfter(currentStep, stepKey, latestState);
+        if (!skippedStep) {
+          continue;
+        }
+        const status = getNodeStatusByStep(skippedStep, latestState);
+        if (isStepProtectedFromAutoSkip(status)) {
+          continue;
+        }
+        await setNodeStatusByStep(skippedStep, 'skipped', latestState);
+        skippedSteps.push(skippedStep);
+      }
+
+      await setState({ signupVerificationRequestedAt: null });
+      if (skippedSteps.length) {
+        await addLog(
+          `步骤 ${currentStep}：手机号密码提交后已确认账号进入登录后续状态，已自动跳过步骤 ${skippedSteps.join('/')}，流程将直接进入 OAuth 后续节点。`,
+          'warn',
+          { step: currentStep, stepKey: 'fill-password' }
+        );
+      }
+      payload.signupVerificationRequestedAt = null;
+      payload.passwordLoginFlow = true;
+      payload.skipRegistrationFlow = true;
+      return {
+        ...payload,
+        signupVerificationRequestedAt: null,
+        passwordLoginFlow: true,
+        skipRegistrationFlow: true,
+      };
+    }
+
     function findStepByKeyAfter(currentOrder, targetKey, state = {}) {
       const activeStepIds = typeof getStepIdsForState === 'function'
         ? getStepIdsForState(state)
@@ -847,6 +950,13 @@
           break;
         case 3:
           await syncStepAccountIdentityFromPayload(payload);
+          {
+            const latestState = await getState();
+            if (shouldSkipPhoneSignupRegistrationTailAfterPassword(payload, latestState)) {
+              await skipPhoneSignupRegistrationTailAfterPassword(step, payload);
+              break;
+            }
+          }
           if (payload.signupVerificationRequestedAt) {
             await setState({ signupVerificationRequestedAt: payload.signupVerificationRequestedAt });
           }
@@ -967,9 +1077,16 @@
             notifyNodeError(nodeId, '流程已被用户停止。');
             return { ok: true };
           }
+          let completionPayload = message.payload || {};
           try {
             if (nodeId === 'fill-password' && typeof finalizeStep3Completion === 'function') {
-              await finalizeStep3Completion(message.payload || {});
+              const finalizedPayload = await finalizeStep3Completion(message.payload || {});
+              if (finalizedPayload && typeof finalizedPayload === 'object') {
+                completionPayload = {
+                  ...completionPayload,
+                  ...finalizedPayload,
+                };
+              }
             }
           } catch (error) {
             if (typeof isCloudflareSecurityBlockedError === 'function' && isCloudflareSecurityBlockedError(error)) {
@@ -1004,11 +1121,11 @@
               stepKey: nodeId,
             });
           }
-          await handleStepData(resolvedStep, message.payload);
+          await handleStepData(resolvedStep, completionPayload);
           if (isFinalNode && typeof appendAccountRunRecord === 'function') {
             await appendAccountRunRecord('success', completionState);
           }
-          notifyNodeComplete(nodeId, message.payload);
+          notifyNodeComplete(nodeId, completionPayload);
           return { ok: true };
         }
 
@@ -1064,7 +1181,6 @@
           const requestId = String(message.payload?.requestId || '').trim();
           const currentRequestId = String(currentState?.plusManualConfirmationRequestId || '').trim();
           const method = String(currentState?.plusManualConfirmationMethod || '').trim().toLowerCase();
-          const isGpcOtp = method === 'gopay-otp';
           if (!currentState?.plusManualConfirmationPending) {
             return { ok: true, ignored: true };
           }
@@ -1080,23 +1196,6 @@
             plusManualConfirmationTitle: '',
             plusManualConfirmationMessage: '',
           };
-
-          if (isGpcOtp && confirmed) {
-            const otp = String(message.payload?.otp || message.payload?.code || '').trim().replace(/[^\d]/g, '');
-            if (!otp) {
-              throw new Error('请输入 GPC OTP 验证码。');
-            }
-            const otpUpdates = {
-              ...clearManualConfirmationState,
-              gopayHelperResolvedOtp: otp,
-            };
-            await setState(otpUpdates);
-            if (typeof broadcastDataUpdate === 'function') {
-              broadcastDataUpdate(otpUpdates);
-            }
-            await addLog(`步骤 ${step}：已收到 GPC OTP，准备提交验证。`, 'ok');
-            return { ok: true };
-          }
 
           await setState(clearManualConfirmationState);
           if (typeof broadcastDataUpdate === 'function') {
@@ -1115,7 +1214,7 @@
 
           const cancelMessage = method === 'gopay'
             ? '已取消 GoPay 订阅确认'
-            : (isGpcOtp ? '已取消 GPC OTP 输入' : '已取消当前手动确认');
+            : '已取消当前手动确认';
           await setNodeStatus(confirmationNodeId, 'failed');
           await addLog(`步骤 ${step}：${cancelMessage}。`, 'warn');
           await appendManualAccountRunRecordIfNeeded(
@@ -1571,7 +1670,7 @@
 
         case 'REFRESH_GPC_CARD_BALANCE': {
           if (typeof refreshGpcCardBalance !== 'function') {
-            throw new Error('GPC API Key 余额查询能力尚未接入。');
+            throw new Error('GPC 卡密查询能力尚未接入。');
           }
           const state = await getState();
           const result = await refreshGpcCardBalance({

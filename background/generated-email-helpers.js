@@ -1,10 +1,11 @@
 (function attachGeneratedEmailHelpers(root, factory) {
-  root.MultiPageGeneratedEmailHelpers = factory();
-})(typeof self !== 'undefined' ? self : globalThis, function createGeneratedEmailHelpersModule() {
+  root.MultiPageGeneratedEmailHelpers = factory(root);
+})(typeof self !== 'undefined' ? self : globalThis, function createGeneratedEmailHelpersModule(root = globalThis) {
   function createGeneratedEmailHelpers(deps = {}) {
     const {
       addLog,
       buildGeneratedAliasEmail,
+      buildCloudflareTempEmailEffectiveDomain,
       buildCloudflareTempEmailHeaders,
       CLOUDFLARE_TEMP_EMAIL_GENERATOR,
       CUSTOM_EMAIL_POOL_GENERATOR,
@@ -23,6 +24,7 @@
       normalizeEmailGenerator,
       isGeneratedAliasProvider,
       persistRegistrationEmailState = null,
+      buildRandomNameDateTimeLocalPart = root.MultiPageEmailLocalPartHelpers?.buildRandomNameDateTimeLocalPart,
       reuseOrCreateTab,
       sendToContentScript,
       setEmailState,
@@ -58,6 +60,12 @@
       return chars.join('');
     }
 
+    function buildDefaultGeneratedEmailLocalPart(date = new Date()) {
+      return typeof buildRandomNameDateTimeLocalPart === 'function'
+        ? buildRandomNameDateTimeLocalPart(date)
+        : '';
+    }
+
     async function fetchCloudflareEmail(state, options = {}) {
       throwIfStopped();
       const latestState = state || await getState();
@@ -91,6 +99,12 @@
       }
       if (requireDomain && !config.domain) {
         throw new Error('Cloudflare Temp Email 域名为空或格式无效。');
+      }
+      if (config.useFixedSubdomain && !config.effectiveDomain && typeof buildCloudflareTempEmailEffectiveDomain === 'function') {
+        config.effectiveDomain = buildCloudflareTempEmailEffectiveDomain(config);
+      }
+      if (requireDomain && config.useFixedSubdomain && !config.effectiveDomain) {
+        throw new Error('Cloudflare Temp Email 固定子域前缀为空或格式无效。');
       }
       return config;
     }
@@ -158,12 +172,19 @@
         requireAdminAuth: true,
         requireDomain: true,
       });
-      const requestedName = String(options.localPart || options.name || '').trim().toLowerCase() || generateCloudflareAliasLocalPart();
+      const requestedName = String(options.localPart || options.name || '').trim().toLowerCase()
+        || buildDefaultGeneratedEmailLocalPart(options.date)
+        || generateCloudflareAliasLocalPart();
+      const effectiveDomain = config.effectiveDomain || (
+        typeof buildCloudflareTempEmailEffectiveDomain === 'function'
+          ? buildCloudflareTempEmailEffectiveDomain(config)
+          : config.domain
+      );
       const payload = {
         enablePrefix: true,
-        enableRandomSubdomain: Boolean(config.useRandomSubdomain),
+        enableRandomSubdomain: config.useFixedSubdomain ? false : Boolean(config.useRandomSubdomain),
         name: requestedName,
-        domain: config.domain,
+        domain: effectiveDomain,
       };
       const result = await requestCloudflareTempEmailJson(config, '/admin/new_address', {
         method: 'POST',
@@ -365,6 +386,8 @@
       fetchCloudflareTempEmailAddress,
       fetchDuckEmail,
       fetchGeneratedEmail,
+      buildDefaultGeneratedEmailLocalPart,
+      buildRandomNameDateTimeLocalPart,
       generateCloudflareAliasLocalPart,
       requestCloudflareTempEmailJson,
     };

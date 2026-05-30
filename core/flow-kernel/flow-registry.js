@@ -57,11 +57,6 @@
         'row-step-execution-range',
       ],
     },
-    'shared-settings-actions': {
-      id: 'shared-settings-actions',
-      label: '\u8bbe\u7f6e\u64cd\u4f5c',
-      rowIds: ['row-settings-actions'],
-    },
   });
 
   function buildFlowDefinitions() {

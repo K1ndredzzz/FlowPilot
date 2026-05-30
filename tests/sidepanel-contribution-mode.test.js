@@ -204,6 +204,7 @@ const selectCfDomain = { value: 'example.com' };
 const selectTempEmailDomain = { value: 'mail.example.com' };
 const selectPanelMode = { value: 'cpa' };
 function getSelectedPlusPaymentMethod() { return 'paypal'; }
+function normalizeGpcCardKeyInput(value = '') { return String(value || '').trim().toUpperCase(); }
 const inputVpsUrl = { value: 'https://panel.example.com' };
 const inputVpsPassword = { value: 'panel-secret' };
 const inputSub2ApiUrl = { value: 'https://sub.example.com' };
@@ -245,6 +246,15 @@ const inputTempEmailAdminAuth = { value: 'admin-secret' };
 const inputTempEmailCustomAuth = { value: 'custom-secret' };
 const inputTempEmailReceiveMailbox = { value: 'relay@example.com' };
 const inputTempEmailUseRandomSubdomain = { checked: true };
+const inputTempEmailUseFixedSubdomain = { checked: false };
+const inputTempEmailSubdomainPrefix = { value: '' };
+function getSelectedCloudflareTempEmailSubdomainMode() {
+  if (inputTempEmailUseFixedSubdomain.checked) return 'fixed';
+  if (inputTempEmailUseRandomSubdomain.checked) return 'random';
+  return 'none';
+}
+const CLOUDFLARE_TEMP_EMAIL_SUBDOMAIN_MODE_RANDOM = 'random';
+const CLOUDFLARE_TEMP_EMAIL_SUBDOMAIN_MODE_FIXED = 'fixed';
 const inputAutoSkipFailures = { checked: false };
 const inputAutoSkipFailuresThreadIntervalMinutes = { value: '5' };
 const inputAutoStepDelaySeconds = { value: '10' };
@@ -293,6 +303,7 @@ function normalizeLuckmailBaseUrl(value) { return String(value || '').trim(); }
 function normalizeLuckmailEmailType(value) { return String(value || '').trim(); }
 function normalizeCloudflareTempEmailBaseUrlValue(value) { return String(value || '').trim(); }
 function normalizeCloudflareTempEmailReceiveMailboxValue(value) { return String(value || '').trim(); }
+function normalizeCloudflareTempEmailSubdomainPrefixValue(value) { return String(value || '').trim().toLowerCase(); }
 function normalizeAutoRunThreadIntervalMinutes(value) { return Number(value) || 0; }
 function normalizeAutoStepDelaySeconds(value) { return value === '' ? null : Number(value); }
 function normalizeVerificationResendCount(value, fallback) { return Number.isFinite(Number(value)) ? Number(value) : fallback; }

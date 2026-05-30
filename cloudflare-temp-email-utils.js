@@ -58,6 +58,29 @@
     return domains;
   }
 
+  function normalizeCloudflareTempEmailSubdomainPrefix(rawValue = '') {
+    let value = String(rawValue || '').trim().toLowerCase();
+    if (!value) return '';
+    value = value.replace(/^@+/, '');
+    value = value.replace(/^https?:\/\//, '');
+    value = value.replace(/\/.*$/, '');
+    value = value.replace(/^\.+|\.+$/g, '');
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(value)) {
+      return '';
+    }
+    return value;
+  }
+
+  function buildCloudflareTempEmailEffectiveDomain(config = {}) {
+    const domain = normalizeCloudflareTempEmailDomain(config.domain);
+    if (!domain) return '';
+    const useFixedSubdomain = Boolean(config.useFixedSubdomain);
+    const subdomainPrefix = normalizeCloudflareTempEmailSubdomainPrefix(config.subdomainPrefix);
+    if (!useFixedSubdomain) return domain;
+    if (!subdomainPrefix) return '';
+    return `${subdomainPrefix}.${domain}`;
+  }
+
   function buildCloudflareTempEmailHeaders(config = {}, options = {}) {
     const headers = {};
     const adminAuth = firstNonEmptyString([config.adminAuth, config.cloudflareTempEmailAdminAuth]);
@@ -563,6 +586,7 @@
 
   return {
     DEFAULT_MAIL_PAGE_SIZE,
+    buildCloudflareTempEmailEffectiveDomain,
     buildCloudflareTempEmailHeaders,
     getCloudflareTempEmailAddressFromResponse,
     joinCloudflareTempEmailUrl,
@@ -572,5 +596,6 @@
     normalizeCloudflareTempEmailDomains,
     normalizeCloudflareTempEmailMailApiMessages,
     normalizeCloudflareTempEmailMessage,
+    normalizeCloudflareTempEmailSubdomainPrefix,
   };
 });

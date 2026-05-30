@@ -73,6 +73,8 @@ const PERSISTED_SETTING_DEFAULTS = {
   accountRunHistoryTextEnabled: false,
   cloudflareTempEmailLookupMode: 'receive-mailbox',
   cloudflareTempEmailUseRandomSubdomain: false,
+  cloudflareTempEmailUseFixedSubdomain: false,
+  cloudflareTempEmailSubdomainPrefix: '',
   cloudflareTempEmailDomain: '',
   cloudflareTempEmailDomains: [],
 };
@@ -97,6 +99,16 @@ function normalizeCloudflareDomains(value) { return Array.isArray(value) ? value
 function normalizeCloudflareTempEmailBaseUrl(value) { return String(value || '').trim(); }
 function normalizeCloudflareTempEmailAddress(value = '') { return String(value || '').trim().toLowerCase(); }
 function normalizeCloudflareTempEmailDomain(value) { return String(value || '').trim().toLowerCase(); }
+function normalizeCloudflareTempEmailSubdomainPrefix(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(normalized) ? normalized : '';
+}
+function buildCloudflareTempEmailEffectiveDomain(config = {}) {
+  const domain = normalizeCloudflareTempEmailDomain(config.domain);
+  const prefix = normalizeCloudflareTempEmailSubdomainPrefix(config.subdomainPrefix);
+  if (!domain) return '';
+  return config.useFixedSubdomain ? (prefix ? \`\${prefix}.\${domain}\` : '') : domain;
+}
 function normalizeCloudflareTempEmailDomains(value) {
   const seen = new Set();
   const domains = [];
@@ -120,17 +132,24 @@ return {
   `)();
 
   assert.equal(api.normalizePersistentSettingValue('cloudflareTempEmailUseRandomSubdomain', 1), true);
+  assert.equal(api.normalizePersistentSettingValue('cloudflareTempEmailUseFixedSubdomain', 1), true);
+  assert.equal(api.normalizePersistentSettingValue('cloudflareTempEmailSubdomainPrefix', 'Team-1'), 'team-1');
+  assert.equal(api.normalizePersistentSettingValue('cloudflareTempEmailSubdomainPrefix', 'team.one'), '');
   assert.equal(api.normalizePersistentSettingValue('cloudflareTempEmailLookupMode', 'registration-email'), 'registration-email');
   assert.equal(api.normalizePersistentSettingValue('cloudflareTempEmailLookupMode', 'bad'), 'receive-mailbox');
 
   const payload = api.buildPersistentSettingsPayload({
     cloudflareTempEmailLookupMode: 'registration-email',
     cloudflareTempEmailUseRandomSubdomain: true,
+    cloudflareTempEmailUseFixedSubdomain: true,
+    cloudflareTempEmailSubdomainPrefix: 'Team',
     cloudflareTempEmailDomain: 'mail.example.com',
     cloudflareTempEmailDomains: ['mail.example.com', 'alt.example.com'],
   });
   assert.equal(payload.cloudflareTempEmailLookupMode, 'registration-email');
-  assert.equal(payload.cloudflareTempEmailUseRandomSubdomain, true);
+  assert.equal(payload.cloudflareTempEmailUseRandomSubdomain, false);
+  assert.equal(payload.cloudflareTempEmailUseFixedSubdomain, true);
+  assert.equal(payload.cloudflareTempEmailSubdomainPrefix, 'team');
   assert.equal(payload.cloudflareTempEmailDomain, 'mail.example.com');
   assert.deepEqual(payload.cloudflareTempEmailDomains, ['mail.example.com', 'alt.example.com']);
 
@@ -141,6 +160,8 @@ return {
     cloudflareTempEmailLookupMode: 'registration-email',
     cloudflareTempEmailReceiveMailbox: 'Forward@Example.com',
     cloudflareTempEmailUseRandomSubdomain: true,
+    cloudflareTempEmailUseFixedSubdomain: true,
+    cloudflareTempEmailSubdomainPrefix: 'Team',
     cloudflareTempEmailDomain: 'mail.example.com',
     cloudflareTempEmailDomains: ['mail.example.com'],
   });
@@ -150,9 +171,12 @@ return {
     customAuth: 'custom-secret',
     lookupMode: 'registration-email',
     receiveMailbox: 'forward@example.com',
-    useRandomSubdomain: true,
+    useRandomSubdomain: false,
+    useFixedSubdomain: true,
+    subdomainPrefix: 'team',
     domain: 'mail.example.com',
     domains: ['mail.example.com'],
+    effectiveDomain: 'team.mail.example.com',
   });
 });
 
@@ -169,6 +193,8 @@ const PERSISTED_SETTING_DEFAULTS = {
   autoDeleteUsedIcloudAlias: false,
   accountRunHistoryTextEnabled: false,
   cloudflareTempEmailUseRandomSubdomain: false,
+  cloudflareTempEmailUseFixedSubdomain: false,
+  cloudflareTempEmailSubdomainPrefix: '',
   cloudflareTempEmailDomain: '',
   cloudflareTempEmailDomains: [],
 };
@@ -200,6 +226,7 @@ function normalizeCloudflareTempEmailBaseUrl(value) { return String(value || '')
 function normalizeCloudflareTempEmailAddress(value = '') { return String(value || '').trim().toLowerCase(); }
 function normalizeCloudflareTempEmailReceiveMailbox(value = '') { return String(value || '').trim().toLowerCase(); }
 function normalizeCloudflareTempEmailDomain(value) { return String(value || '').trim().toLowerCase(); }
+function normalizeCloudflareTempEmailSubdomainPrefix(value) { return String(value || '').trim().toLowerCase(); }
 function normalizeCloudflareTempEmailDomains(value) { return Array.isArray(value) ? value.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean) : []; }
 function normalizeHotmailAccounts(value) { return Array.isArray(value) ? value : []; }
 function normalizeMail2925Accounts(value) { return Array.isArray(value) ? value : []; }

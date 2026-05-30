@@ -277,6 +277,7 @@
         try {
           const rawCurrentState = {
             ...(attempt === 1 ? state : await getState()),
+            visibleStep: completionStep,
             ...(resolvedIdentifierType === 'phone' ? {
               forceLoginIdentifierType: 'phone',
               forceEmailLogin: false,

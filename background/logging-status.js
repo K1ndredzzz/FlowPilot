@@ -92,7 +92,7 @@
 
     function getErrorMessage(error) {
       return String(typeof error === 'string' ? error : error?.message || '')
-        .replace(/^GPC_TASK_ENDED::/i, '')
+        .replace(/^GPC_PAGE_FLOW_ENDED::/i, '')
         .replace(/^AUTO_RUN_STEP_IDLE_RESTART::/i, '');
     }
 
@@ -121,6 +121,8 @@
           return '登录超时报错页';
         case 'oauth_consent_page':
           return 'OAuth 授权页';
+        case 'choose_account_page':
+          return 'OpenAI choose account page';
         case 'add_phone_page':
           return '手机号页';
         case 'add_email_page':

@@ -19,12 +19,13 @@
       getAutoRunStatusPayload,
       getErrorMessage,
       getFirstUnfinishedNodeId,
+      getNodeIdsForState,
       getPendingAutoRunTimerPlan,
       getRunningNodeIds,
       getState,
       hasSavedNodeProgress,
       isAddPhoneAuthFailure,
-      isGpcTaskEndedFailure,
+      isGpcPageFlowEndedFailure,
       isKiroProxyFailure,
       isPhoneSmsPlatformRateLimitFailure,
       isPlusCheckoutNonFreeTrialFailure,
@@ -63,6 +64,102 @@
         return hasSavedNodeProgress(state.nodeStatuses || {}, state);
       }
       return false;
+    }
+
+    const EMPTY_REGISTRATION_EMAIL_STATE = Object.freeze({
+      current: '',
+      previous: '',
+      source: '',
+      updatedAt: 0,
+    });
+    const DONE_NODE_STATUSES = new Set(['completed', 'manual_completed', 'skipped']);
+
+    function buildFreshAttemptIdentityResetPatch() {
+      return {
+        currentPhoneActivation: null,
+        phoneNumber: '',
+        accountIdentifierType: null,
+        accountIdentifier: '',
+        signupPhoneNumber: '',
+        signupPhoneActivation: null,
+        signupPhoneCompletedActivation: null,
+        signupPhoneVerificationRequestedAt: null,
+        signupPhoneVerificationPurpose: '',
+        currentPhoneVerificationCode: '',
+        currentPhoneVerificationCountdownEndsAt: 0,
+        currentPhoneVerificationCountdownWindowIndex: 0,
+        currentPhoneVerificationCountdownWindowTotal: 0,
+        email: null,
+        registrationEmailState: { ...EMPTY_REGISTRATION_EMAIL_STATE },
+        step8VerificationTargetEmail: '',
+        lastEmailTimestamp: null,
+        lastSignupCode: '',
+        lastLoginCode: '',
+        bindEmailSubmitted: false,
+      };
+    }
+
+    function isPhoneSignupFlow(state = {}) {
+      const resolvedSignupMethod = String(state?.resolvedSignupMethod || '').trim().toLowerCase();
+      if (resolvedSignupMethod === 'phone' || resolvedSignupMethod === 'email') {
+        return resolvedSignupMethod === 'phone';
+      }
+      const signupMethod = String(state?.signupMethod || '').trim().toLowerCase();
+      return signupMethod === 'phone';
+    }
+
+    function getFullWorkflowNodeIds(state = {}) {
+      if (typeof getNodeIdsForState === 'function') {
+        const nodeIds = getNodeIdsForState(state);
+        if (Array.isArray(nodeIds) && nodeIds.length) {
+          return Array.from(new Set(
+            nodeIds
+              .map((nodeId) => String(nodeId || '').trim())
+              .filter(Boolean)
+          ));
+        }
+      }
+      return getKnownNodeIdsFromState(state);
+    }
+
+    function isFullWorkflowDone(state = {}) {
+      const nodeIds = getFullWorkflowNodeIds(state);
+      if (!nodeIds.length) {
+        return false;
+      }
+      const nodeStatuses = state?.nodeStatuses || {};
+      return nodeIds.every((nodeId) => DONE_NODE_STATUSES.has(String(nodeStatuses[nodeId] || 'pending').trim()));
+    }
+
+    async function clearPhoneSignupRuntimeAfterRoundSuccess() {
+      const currentState = await getState();
+      if (!isPhoneSignupFlow(currentState) || !isFullWorkflowDone(currentState)) {
+        return false;
+      }
+
+      await setState({
+        accountIdentifierType: null,
+        accountIdentifier: '',
+        currentPhoneActivation: null,
+        phoneNumber: '',
+        signupPhoneNumber: '',
+        signupPhoneActivation: null,
+        signupPhoneCompletedActivation: null,
+        signupPhoneVerificationRequestedAt: null,
+        signupPhoneVerificationPurpose: '',
+        currentPhoneVerificationCode: '',
+        currentPhoneVerificationCountdownEndsAt: 0,
+        currentPhoneVerificationCountdownWindowIndex: 0,
+        currentPhoneVerificationCountdownWindowTotal: 0,
+        email: null,
+        registrationEmailState: { ...EMPTY_REGISTRATION_EMAIL_STATE },
+        step8VerificationTargetEmail: '',
+        lastEmailTimestamp: null,
+        lastSignupCode: '',
+        lastLoginCode: '',
+        bindEmailSubmitted: false,
+      });
+      return true;
     }
 
     async function waitForRunningWorkflowNodesToFinish(payload = {}) {
@@ -631,6 +728,7 @@
                 attemptRun,
                 sessionId,
               }),
+              ...buildFreshAttemptIdentityResetPatch(),
               currentNodeId: '',
               nodeStatuses: buildFreshAttemptNodeStatuses(prevState),
               autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
@@ -698,6 +796,7 @@
               attemptRuns: attemptRun,
               continued: useExistingProgress,
             });
+            await clearPhoneSignupRuntimeAfterRoundSuccess();
 
             roundSummary.status = 'success';
             roundSummary.finalFailureReason = '';
@@ -733,9 +832,9 @@
               && isAddPhoneAuthFailure(err);
             const blockedByPlusNonFreeTrial = typeof isPlusCheckoutNonFreeTrialFailure === 'function'
               && isPlusCheckoutNonFreeTrialFailure(err);
-            const blockedByGpcTaskEnded = typeof isGpcTaskEndedFailure === 'function'
-              ? isGpcTaskEndedFailure(err)
-              : /GPC_TASK_ENDED::/i.test(err?.message || String(err || ''));
+            const blockedByGpcPageFlowEnded = typeof isGpcPageFlowEndedFailure === 'function'
+              ? isGpcPageFlowEndedFailure(err)
+              : /GPC_PAGE_FLOW_ENDED::/i.test(err?.message || String(err || ''));
             const blockedBySignupUserAlreadyExists = typeof isSignupUserAlreadyExistsFailure === 'function'
               && !keepSameEmailUntilAddPhone
               && isSignupUserAlreadyExistsFailure(err);
@@ -746,7 +845,7 @@
             const canRetry = !blockedByAddPhone
               && !blockedByPhoneNoSupply
               && !blockedByPlusNonFreeTrial
-              && !blockedByGpcTaskEnded
+              && !blockedByGpcPageFlowEnded
               && !blockedBySignupUserAlreadyExists
               && !blockedByStep4Route405
               && !blockedByKiroProxy
@@ -862,18 +961,18 @@
               break;
             }
 
-            if (blockedByGpcTaskEnded) {
+            if (blockedByGpcPageFlowEnded) {
               roundSummary.status = 'failed';
               roundSummary.finalFailureReason = reason;
               await setState({
                 autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
               });
               await appendRoundRecordIfNeeded('failed', reason, err);
-              cancelPendingCommands('当前轮因 GPC 任务已结束。');
+              cancelPendingCommands('当前轮因 GPC 页面流程已结束。');
               await broadcastStopToContentScripts();
               if (!autoRunSkipFailures) {
                 await addLog(
-                  `第 ${targetRun}/${totalRuns} 轮 GPC 任务已结束，自动重试未开启，当前自动运行将停止。`,
+                  `第 ${targetRun}/${totalRuns} 轮 GPC 页面流程已结束，自动重试未开启，当前自动运行将停止。`,
                   'warn'
                 );
                 stoppedEarly = true;
@@ -886,11 +985,11 @@
                 break;
               }
 
-              await addLog(`第 ${targetRun}/${totalRuns} 轮 GPC 任务已结束，本轮将直接失败并跳过剩余重试。`, 'warn');
+              await addLog(`第 ${targetRun}/${totalRuns} 轮 GPC 页面流程已结束，本轮将直接失败并跳过剩余重试。`, 'warn');
               await addLog(
                 targetRun < totalRuns
-                  ? `第 ${targetRun}/${totalRuns} 轮因 GPC 任务结束提前结束，自动流程将继续下一轮。`
-                  : `第 ${targetRun}/${totalRuns} 轮因 GPC 任务结束提前结束，已无后续轮次，本次自动运行结束。`,
+                  ? `第 ${targetRun}/${totalRuns} 轮因 GPC 页面流程结束提前结束，自动流程将继续下一轮。`
+                  : `第 ${targetRun}/${totalRuns} 轮因 GPC 页面流程结束提前结束，已无后续轮次，本次自动运行结束。`,
                 'warn'
               );
               forceFreshTabsNextRun = true;

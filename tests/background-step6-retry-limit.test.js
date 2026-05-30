@@ -137,6 +137,45 @@ test('step 7 retries up to configured limit and then fails', async () => {
   assert.equal(events.completed, 0);
 });
 
+test('step 7 preserves visible step when refreshing OAuth after retry', async () => {
+  const source = fs.readFileSync('flows/openai/background/steps/oauth-login.js', 'utf8');
+  const globalScope = {};
+  const api = new Function('self', `${source}; return self.MultiPageBackgroundStep7;`)(globalScope);
+
+  const events = {
+    refreshSteps: [],
+  };
+
+  const executor = api.createStep7Executor({
+    addLog: async () => {},
+    completeNodeFromBackground: async () => {},
+    getErrorMessage: (error) => error?.message || String(error || ''),
+    getLoginAuthStateLabel: (state) => state || 'unknown',
+    getState: async () => ({ email: 'user@example.com', password: 'secret' }),
+    isStep6RecoverableResult: (result) => result?.step6Outcome === 'recoverable',
+    isStep6SuccessResult: (result) => result?.step6Outcome === 'success',
+    refreshOAuthUrlBeforeStep6: async (state) => {
+      events.refreshSteps.push(state.visibleStep);
+      return `https://oauth.example/${events.refreshSteps.length}`;
+    },
+    reuseOrCreateTab: async () => {},
+    sendToContentScriptResilient: async () => ({
+      step6Outcome: 'recoverable',
+      state: 'email_page',
+      message: '当前仍停留在邮箱页。',
+    }),
+    STEP6_MAX_ATTEMPTS: 3,
+    throwIfStopped: () => {},
+  });
+
+  await assert.rejects(
+    () => executor.executeStep7({ email: 'user@example.com', password: 'secret', visibleStep: 9 }),
+    /步骤 9：判断失败后已重试 2 次/
+  );
+
+  assert.deepStrictEqual(events.refreshSteps, [9, 9, 9]);
+});
+
 test('step 7 hands add-phone to the dedicated post-login phone node without internal retry', async () => {
   const source = fs.readFileSync('flows/openai/background/steps/oauth-login.js', 'utf8');
   const globalScope = {};

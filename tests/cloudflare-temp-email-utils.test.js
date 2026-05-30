@@ -2,12 +2,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  buildCloudflareTempEmailEffectiveDomain,
   buildCloudflareTempEmailHeaders,
   getCloudflareTempEmailAddressFromResponse,
   normalizeCloudflareTempEmailBaseUrl,
   normalizeCloudflareTempEmailDomain,
   normalizeCloudflareTempEmailDomains,
   normalizeCloudflareTempEmailMailApiMessages,
+  normalizeCloudflareTempEmailSubdomainPrefix,
 } = require('../cloudflare-temp-email-utils.js');
 const {
   pickVerificationMessageWithTimeFallback,
@@ -31,6 +33,38 @@ test('normalizeCloudflareTempEmailDomain and domains de-duplicate valid entries'
   assert.deepEqual(
     normalizeCloudflareTempEmailDomains(['mail.example.com', 'MAIL.EXAMPLE.COM', 'bad-value']),
     ['mail.example.com']
+  );
+});
+
+test('cloudflare temp email fixed subdomain helpers validate one label and build effective domain', () => {
+  assert.equal(normalizeCloudflareTempEmailSubdomainPrefix(' Team-1 '), 'team-1');
+  assert.equal(normalizeCloudflareTempEmailSubdomainPrefix('a.example'), '');
+  assert.equal(normalizeCloudflareTempEmailSubdomainPrefix('-team'), '');
+  assert.equal(normalizeCloudflareTempEmailSubdomainPrefix('team_1'), '');
+
+  assert.equal(
+    buildCloudflareTempEmailEffectiveDomain({
+      domain: 'Mail.Example.com',
+      useFixedSubdomain: true,
+      subdomainPrefix: 'Team',
+    }),
+    'team.mail.example.com'
+  );
+  assert.equal(
+    buildCloudflareTempEmailEffectiveDomain({
+      domain: 'mail.example.com',
+      useFixedSubdomain: false,
+      subdomainPrefix: 'team',
+    }),
+    'mail.example.com'
+  );
+  assert.equal(
+    buildCloudflareTempEmailEffectiveDomain({
+      domain: 'mail.example.com',
+      useFixedSubdomain: true,
+      subdomainPrefix: '',
+    }),
+    ''
   );
 });
 

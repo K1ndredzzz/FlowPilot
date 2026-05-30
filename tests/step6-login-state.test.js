@@ -143,6 +143,10 @@ function isOAuthConsentPage() {
   return ${JSON.stringify(Boolean(overrides.oauthConsentPage))};
 }
 
+function isChooseAccountPage() {
+  return ${JSON.stringify(Boolean(overrides.chooseAccountPage))};
+}
+
 ${bundle}
 
 return {
@@ -289,6 +293,18 @@ return {
 
 {
   const api = createApi({
+    pathname: '/choose-an-account',
+    href: 'https://auth.openai.com/choose-an-account',
+    chooseAccountPage: true,
+  });
+
+  const snapshot = api.inspectLoginAuthState();
+  assert.strictEqual(snapshot.state, 'choose_account_page');
+  assert.strictEqual(snapshot.chooseAccountPage, true);
+}
+
+{
+  const api = createApi({
     phoneInput: { id: 'phone' },
     submitButton: { id: 'submit' },
   });
@@ -324,6 +340,11 @@ assert.ok(
 assert.ok(
   extractFunction('inspectLoginAuthState').includes("state: 'add_email_page'"),
   'inspectLoginAuthState 应产出 add_email_page 状态'
+);
+
+assert.ok(
+  extractFunction('inspectLoginAuthState').includes("state: 'choose_account_page'"),
+  'inspectLoginAuthState should produce choose_account_page state'
 );
 
 console.log('step6 login state tests passed');

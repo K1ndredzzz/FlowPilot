@@ -199,6 +199,23 @@
       return String(visibleSpan?.textContent || '').trim();
     }
 
+    function phoneNumberMatchesDialCode(phoneNumber = '', dialCode = '') {
+      const digits = normalizePhoneDigits(phoneNumber);
+      const normalizedDialCode = normalizePhoneDigits(dialCode);
+      if (!digits || !normalizedDialCode) {
+        return false;
+      }
+      return digits.startsWith(normalizedDialCode) && digits.length > normalizedDialCode.length;
+    }
+
+    function selectedCountryMatchesPhoneNumber(phoneNumber = '') {
+      const digits = normalizePhoneDigits(phoneNumber);
+      if (!digits) {
+        return true;
+      }
+      return phoneNumberMatchesDialCode(phoneNumber, getDisplayedDialCode());
+    }
+
     function toNationalPhoneNumber(value, dialCode) {
       const digits = normalizePhoneDigits(value);
       const normalizedDialCode = normalizePhoneDigits(dialCode);
@@ -364,15 +381,17 @@
 
       const byLabel = findCountryOptionByLabel(countryLabel);
       if (await trySelectCountryOption(select, byLabel)) {
-        return true;
+        if (selectedCountryMatchesPhoneNumber(phoneNumber)) {
+          return true;
+        }
       }
 
       const byPhoneNumber = findCountryOptionByPhoneNumber(phoneNumber);
       if (await trySelectCountryOption(select, byPhoneNumber)) {
-        return true;
+        return selectedCountryMatchesPhoneNumber(phoneNumber);
       }
 
-      return Boolean(getSelectedCountryOption());
+      return selectedCountryMatchesPhoneNumber(phoneNumber);
     }
 
     function getAddPhoneSubmitButton() {

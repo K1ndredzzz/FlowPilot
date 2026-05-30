@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const source = fs.readFileSync('background.js', 'utf8');
+const DEFAULT_MADAO_BASE_URL_FOR_TEST = 'http://127.0.0.1:7822';
+const DEFAULT_MADAO_MODE_FOR_TEST = 'routing_plan';
 
 function extractFunction(name) {
   const markers = [`async function ${name}(`, `function ${name}(`];
@@ -56,7 +58,6 @@ test('background account history settings are normalized independently from hotm
     extractFunction('normalizeVerificationResendCount'),
     extractFunction('normalizePlusPaymentMethod'),
     extractFunction('normalizePlusAccountAccessStrategy'),
-    extractFunction('normalizeGpcHelperPhoneMode'),
     extractFunction('normalizePhoneSmsProvider'),
     extractFunction('normalizePhoneSmsProviderOrder'),
     extractFunction('normalizeSignupMethod'),
@@ -65,6 +66,13 @@ test('background account history settings are normalized independently from hotm
     extractFunction('normalizeNexSmsCountryId'),
     extractFunction('normalizeNexSmsCountryOrder'),
     extractFunction('normalizeNexSmsServiceCode'),
+    extractFunction('normalizeMaDaoBaseUrl'),
+    extractFunction('normalizeMaDaoMode'),
+    extractFunction('normalizeMaDaoIdentifier'),
+    extractFunction('normalizeMaDaoProviderId'),
+    extractFunction('normalizeMaDaoCountry'),
+    extractFunction('normalizeMaDaoOperator'),
+    extractFunction('normalizeMaDaoPrice'),
     extractFunction('normalizePhonePreferredActivation'),
     extractFunction('normalizePhoneVerificationReplacementLimit'),
     extractFunction('normalizePhoneCodeWaitSeconds'),
@@ -73,6 +81,7 @@ test('background account history settings are normalized independently from hotm
     extractFunction('normalizePhoneCodePollMaxRounds'),
     extractFunction('normalizeHeroSmsMaxPrice'),
     extractFunction('normalizeHeroSmsCountryFallback'),
+    extractFunction('normalizeHeroSmsOperator'),
     extractFunction('normalizePhoneSmsProvider'),
     extractFunction('normalizeFiveSimCountryId'),
     extractFunction('normalizeFiveSimCountryLabel'),
@@ -114,11 +123,15 @@ const VERIFICATION_RESEND_COUNT_MIN = 0;
 const VERIFICATION_RESEND_COUNT_MAX = 20;
 const HERO_SMS_COUNTRY_ID = 52;
 const HERO_SMS_COUNTRY_LABEL = 'Thailand';
+const DEFAULT_HERO_SMS_OPERATOR = 'any';
 const PHONE_SMS_PROVIDER_HERO_SMS = 'hero-sms';
 const PHONE_SMS_PROVIDER_FIVE_SIM = '5sim';
 const PHONE_SMS_PROVIDER_NEXSMS = 'nexsms';
-const DEFAULT_PHONE_SMS_PROVIDER_ORDER = ['hero-sms', '5sim', 'nexsms'];
+const PHONE_SMS_PROVIDER_MADAO = 'madao';
+const DEFAULT_PHONE_SMS_PROVIDER_ORDER = ['hero-sms', '5sim', 'nexsms', 'madao'];
 const DEFAULT_PHONE_SMS_PROVIDER = PHONE_SMS_PROVIDER_HERO_SMS;
+const DEFAULT_MADAO_BASE_URL = 'http://127.0.0.1:7822';
+const DEFAULT_MADAO_MODE = 'routing_plan';
 const SIGNUP_METHOD_EMAIL = 'email';
 const SIGNUP_METHOD_PHONE = 'phone';
 const DEFAULT_SIGNUP_METHOD = SIGNUP_METHOD_EMAIL;
@@ -173,22 +186,23 @@ const self = {
     normalizeGoPayPin(value) {
       return String(value || '').trim().replace(/[^\\d]/g, '');
     },
-    normalizeGpcHelperBaseUrl(value) {
-      return String(value || '')
+    normalizeGpcBaseUrl(value) {
+      return String(value || 'https://gpc.qlhazycoder.top')
         .trim()
         .replace(/\\/+$/g, '')
         .replace(/\\/api\\/checkout\\/start$/i, '')
-        .replace(/\\/api\\/gopay\\/(?:otp|pin)$/i, '')
-        .replace(/\\/api\\/gp\\/tasks(?:\\/[^/?#]+)?(?:\\/(?:otp|pin|stop))?(?:\\?.*)?$/i, '')
-        .replace(/\\/api\\/gp\\/balance(?:\\?.*)?$/i, '')
+        .replace(/\\/api\\/web\\/card\\/balance(?:\\?.*)?$/i, '')
         .replace(/\\/api\\/card\\/balance(?:\\?.*)?$/i, '')
-        .replace(/\\/api\\/card\\/redeem-api-key(?:\\?.*)?$/i, '');
+        || 'https://gpc.qlhazycoder.top';
+    },
+    normalizeGpcCardKey(value) {
+      return String(value || '').trim().toUpperCase();
     },
   },
 };
 const PERSISTED_SETTING_DEFAULTS = {
   autoStepDelaySeconds: null,
-  gopayHelperApiUrl: 'https://gpc.qlhazycoder.top',
+  gpcBaseUrl: 'https://gpc.qlhazycoder.top',
   mailProvider: '163',
   heroSmsMinPrice: '',
   fiveSimMinPrice: '',
@@ -236,37 +250,19 @@ return {
   assert.equal(api.normalizePersistentSettingValue('plusAccountAccessStrategy', 'cpa_codex_session'), 'cpa_codex_session');
   assert.equal(api.normalizePersistentSettingValue('plusAccountAccessStrategy', 'unknown'), 'oauth');
   assert.equal(
-    api.normalizePersistentSettingValue('gopayHelperApiUrl', ' https://gpc.qlhazycoder.top/api/checkout/start '),
+    api.normalizePersistentSettingValue('gpcBaseUrl', ' https://gpc.qlhazycoder.top/api/checkout/start '),
     'https://gpc.qlhazycoder.top'
   );
   assert.equal(
-    api.normalizePersistentSettingValue('gopayHelperApiUrl', ' https://gpc.qlhazycoder.top/api/gp/tasks/task_1/pin '),
+    api.normalizePersistentSettingValue('gpcBaseUrl', ' https://gpc.qlhazycoder.top/api/web/card/balance?card_key=old '),
     'https://gpc.qlhazycoder.top'
   );
-  assert.equal(
-    api.normalizePersistentSettingValue('gopayHelperApiUrl', ' https://gpc.qlhazycoder.top/api/gp/balance '),
-    'https://gpc.qlhazycoder.top'
-  );
-  assert.equal(api.normalizePersistentSettingValue('gopayHelperApiUrl', ''), 'https://gpc.qlhazycoder.top');
-  assert.equal(api.normalizePersistentSettingValue('gopayHelperApiKey', ' gpc-123 '), 'gpc-123');
-  assert.equal(api.normalizePersistentSettingValue('gopayHelperPhoneMode', 'auto'), 'auto');
-  assert.equal(api.normalizePersistentSettingValue('gopayHelperPhoneMode', 'builtin'), 'auto');
-  assert.equal(api.normalizePersistentSettingValue('gopayHelperPhoneMode', 'unknown'), 'manual');
-  assert.equal(api.normalizePersistentSettingValue('gopayHelperRemainingUses', '998'), 998);
-  assert.equal(api.normalizePersistentSettingValue('gopayHelperAutoModeEnabled', 1), true);
-  assert.equal(api.normalizePersistentSettingValue('gopayHelperApiKeyStatus', ' active '), 'active');
-  assert.equal(api.normalizePersistentSettingValue('gopayHelperCountryCode', ' 86 '), '+86');
-  assert.equal(api.normalizePersistentSettingValue('gopayHelperPhoneNumber', ' +86 138-0013-8000 '), '+8613800138000');
-  assert.equal(api.normalizePersistentSettingValue('gopayHelperPin', ' 12-34-56 '), '123456');
-  assert.equal(api.normalizePersistentSettingValue('gopayHelperOtpChannel', 'SMS'), 'sms');
-  assert.equal(api.normalizePersistentSettingValue('gopayHelperOtpChannel', 'unknown'), 'whatsapp');
-  assert.equal(api.normalizePersistentSettingValue('gopayHelperLocalSmsHelperEnabled', 1), true);
-  assert.equal(
-    api.normalizePersistentSettingValue('gopayHelperLocalSmsHelperUrl', 'http://127.0.0.1:18767/otp?x=1'),
-    'http://127.0.0.1:18767'
-  );
-  assert.equal(api.normalizePersistentSettingValue('gopayHelperLocalSmsTimeoutSeconds', '999'), 300);
-  assert.equal(api.normalizePersistentSettingValue('gopayHelperLocalSmsPollIntervalSeconds', '0'), 1);
+  assert.equal(api.normalizePersistentSettingValue('gpcBaseUrl', ''), 'https://gpc.qlhazycoder.top');
+  assert.equal(api.normalizePersistentSettingValue('gpcCardKey', ' gpc-6c9f1a32-45734795-914e6f00 '), 'GPC-6C9F1A32-45734795-914E6F00');
+  assert.equal(api.normalizePersistentSettingValue('gpcRemainingUses', '998'), 998);
+  assert.equal(api.normalizePersistentSettingValue('gpcCardStatus', ' active '), 'active');
+  assert.equal(api.normalizePersistentSettingValue('gpcPageStatus', ' running '), 'running');
+  assert.equal(api.normalizePersistentSettingValue('gpcPageStatusText', ' 页面启动 '), '页面启动');
   assert.equal(api.normalizePersistentSettingValue('verificationResendCount', '7'), 7);
   assert.equal(api.normalizePersistentSettingValue('verificationResendCount', '-1'), 0);
   assert.equal(api.normalizePersistentSettingValue('phoneVerificationReplacementLimit', '9'), 9);
@@ -280,6 +276,8 @@ return {
   assert.equal(api.normalizePersistentSettingValue('heroSmsMaxPrice', '0.123456'), '0.1235');
   assert.equal(api.normalizePersistentSettingValue('heroSmsMaxPrice', '0'), '');
   assert.equal(api.normalizePersistentSettingValue('heroSmsPreferredPrice', '0.051234'), '0.0512');
+  assert.equal(api.normalizePersistentSettingValue('heroSmsOperator', ' AIS!! '), 'ais');
+  assert.equal(api.normalizePersistentSettingValue('heroSmsOperator', ''), 'any');
   assert.equal(api.normalizePersistentSettingValue('signupMethod', 'phone'), 'phone');
   assert.equal(api.normalizePersistentSettingValue('signupMethod', 'unknown'), 'email');
   assert.equal(api.normalizePersistentSettingValue('activeFlowId', 'codex'), 'openai');
@@ -289,8 +287,12 @@ return {
   assert.equal(api.normalizePersistentSettingValue('kiroRsKey', ' key-1 '), 'key-1');
   assert.equal(api.normalizePersistentSettingValue('phoneSmsProvider', '5SIM'), '5sim');
   assert.equal(api.normalizePersistentSettingValue('phoneSmsProvider', 'NEXSMS'), 'nexsms');
+  assert.equal(api.normalizePersistentSettingValue('phoneSmsProvider', 'MaDao'), 'madao');
   assert.equal(api.normalizePersistentSettingValue('phoneSmsProvider', 'unknown'), 'hero-sms');
-  assert.deepStrictEqual(api.normalizePersistentSettingValue('phoneSmsProviderOrder', ['nexsms', '5sim', 'nexsms']), ['nexsms', '5sim']);
+  assert.deepStrictEqual(
+    api.normalizePersistentSettingValue('phoneSmsProviderOrder', ['madao', 'nexsms', '5sim', 'nexsms']),
+    ['madao', 'nexsms', '5sim']
+  );
   assert.equal(api.normalizePersistentSettingValue('phoneSmsReuseEnabled', false), false);
   assert.equal(api.normalizePersistentSettingValue('phoneSmsReuseEnabled', true), true);
   assert.equal(api.normalizePersistentSettingValue('fiveSimApiKey', ' demo-five '), ' demo-five ');
@@ -369,6 +371,23 @@ return {
     [1, 6]
   );
   assert.equal(api.normalizePersistentSettingValue('nexSmsServiceCode', ' OT! '), 'ot');
+  assert.equal(
+    api.normalizePersistentSettingValue('madaoBaseUrl', 'http://127.0.0.1:7822/api/acquire?x=1'),
+    DEFAULT_MADAO_BASE_URL_FOR_TEST
+  );
+  assert.equal(api.normalizePersistentSettingValue('madaoBaseUrl', 'ftp://invalid'), DEFAULT_MADAO_BASE_URL_FOR_TEST);
+  assert.equal(api.normalizePersistentSettingValue('madaoHttpSecret', ' secret-token '), ' secret-token ');
+  assert.equal(api.normalizePersistentSettingValue('madaoMode', 'direct'), 'direct');
+  assert.equal(api.normalizePersistentSettingValue('madaoMode', 'unknown'), DEFAULT_MADAO_MODE_FOR_TEST);
+  assert.equal(api.normalizePersistentSettingValue('madaoRoutingPlanId', ' rp/openai! '), 'rp/openai!');
+  assert.equal(api.normalizePersistentSettingValue('madaoProviderId', ' Upstream A! '), 'upstreama');
+  assert.equal(api.normalizePersistentSettingValue('madaoCountry', ' gb '), 'GB');
+  assert.equal(api.normalizePersistentSettingValue('madaoCountry', 'ANY'), 'any');
+  assert.equal(api.normalizePersistentSettingValue('madaoOperator', ' Operator A! '), 'operatora');
+  assert.equal(api.normalizePersistentSettingValue('madaoAutoPickCountry', 1), true);
+  assert.equal(api.normalizePersistentSettingValue('madaoReusePhone', 0), false);
+  assert.equal(api.normalizePersistentSettingValue('madaoMinPrice', '0.123456'), '0.1235');
+  assert.equal(api.normalizePersistentSettingValue('madaoMaxPrice', '-1'), '');
   const rangePayload = api.buildPersistentSettingsPayload({
     heroSmsMinPrice: '0.023456',
     fiveSimMinPrice: '0.0789',

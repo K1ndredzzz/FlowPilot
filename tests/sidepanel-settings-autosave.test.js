@@ -91,7 +91,7 @@ function markSettingsDirty(value = true) {
 function applySettingsState() {
   applyCalls += 1;
 }
-function updateSaveButtonState() {}
+function updateSettingsSaveState() {}
 function updatePanelModeUI() {}
 function updateMailProviderUI() {}
 function updateButtonStates() {}

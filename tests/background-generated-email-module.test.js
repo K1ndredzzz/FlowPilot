@@ -3,14 +3,36 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 function loadGeneratedEmailHelpersApi() {
+  const localPartHelpersSource = fs.readFileSync('background/email-local-part-helpers.js', 'utf8');
   const source = fs.readFileSync('background/generated-email-helpers.js', 'utf8');
   const globalScope = {};
-  return new Function('self', `${source}; return self.MultiPageGeneratedEmailHelpers;`)(globalScope);
+  return new Function('self', `${localPartHelpersSource}; ${source}; return self.MultiPageGeneratedEmailHelpers;`)(globalScope);
 }
 
 test('background imports generated email helper module', () => {
   const source = fs.readFileSync('background.js', 'utf8');
+  assert.match(source, /importScripts\([\s\S]*'background\/email-local-part-helpers\.js'/);
   assert.match(source, /importScripts\([\s\S]*'background\/generated-email-helpers\.js'/);
+});
+
+test('email local-part helper builds english name, date-time, and random suffix', () => {
+  const source = fs.readFileSync('background/email-local-part-helpers.js', 'utf8');
+  let randomValues = [];
+  const globalScope = {
+    crypto: {
+      getRandomValues: (buffer) => {
+        buffer[0] = randomValues.shift() || 0;
+        return buffer;
+      },
+    },
+  };
+  const api = new Function('self', `${source}; return self.MultiPageEmailLocalPartHelpers;`)(globalScope);
+
+  assert.equal(api.formatDateTimeDigits('2026-05-17T08:09:10.123'), '20260517080910123');
+  randomValues = [0, 1, 2, 3];
+  assert.equal(api.buildRandomAlphaNumericSuffix(4), 'abcd');
+  randomValues = [0, 0, 1, 2, 3];
+  assert.equal(api.buildRandomNameDateTimeLocalPart('2026-05-17T08:09:10.123'), 'james20260517080910123abcd');
 });
 
 test('generated email helper module exposes a factory', () => {
@@ -481,7 +503,7 @@ test('generated email helper uses the regular temp email domain when random subd
     name: requests[0].body.name,
     domain: 'mail.example.com',
   });
-  assert.match(requests[0].body.name, /^[a-z0-9]+$/);
+  assert.match(requests[0].body.name, /^[a-z]+[0-9]{17}[a-z0-9]{4}$/);
 });
 
 test('generated email helper requests random subdomain creation while preserving the returned address', async () => {
@@ -559,6 +581,164 @@ test('generated email helper requests random subdomain creation while preserving
     name: 'user',
     domain: 'mail.example.com',
   });
+});
+
+test('generated email helper uses fixed subdomain as the effective temp email domain', async () => {
+  const api = loadGeneratedEmailHelpersApi();
+  const requests = [];
+  const savedEmails = [];
+
+  const helpers = api.createGeneratedEmailHelpers({
+    addLog: async () => {},
+    buildGeneratedAliasEmail: () => {
+      throw new Error('should not build managed alias');
+    },
+    buildCloudflareTempEmailEffectiveDomain: (config) => `${config.subdomainPrefix}.${config.domain}`,
+    buildCloudflareTempEmailHeaders: () => ({ 'x-admin-auth': 'admin-secret' }),
+    CLOUDFLARE_TEMP_EMAIL_GENERATOR: 'cloudflare-temp-email',
+    DUCK_AUTOFILL_URL: 'https://duckduckgo.com/email',
+    fetch: async (url, options = {}) => {
+      requests.push({
+        url,
+        method: options.method,
+        body: options.body ? JSON.parse(options.body) : null,
+      });
+      return {
+        ok: true,
+        text: async () => JSON.stringify({ address: 'user@team.mail.example.com' }),
+      };
+    },
+    fetchIcloudHideMyEmail: async () => {
+      throw new Error('should not use icloud generator');
+    },
+    getCloudflareTempEmailAddressFromResponse: (payload) => payload.address,
+    getCloudflareTempEmailConfig: () => ({
+      baseUrl: 'https://temp.example.com',
+      adminAuth: 'admin-secret',
+      customAuth: '',
+      useRandomSubdomain: true,
+      useFixedSubdomain: true,
+      subdomainPrefix: 'team',
+      domain: 'mail.example.com',
+    }),
+    getState: async () => ({
+      mailProvider: '163',
+      emailGenerator: 'cloudflare-temp-email',
+    }),
+    ensureMail2925AccountForFlow: async () => {
+      throw new Error('should not allocate mail2925 account');
+    },
+    joinCloudflareTempEmailUrl: (baseUrl, path) => `${baseUrl}${path}`,
+    normalizeCloudflareDomain: () => '',
+    normalizeCloudflareTempEmailAddress: (value) => String(value || '').trim().toLowerCase(),
+    normalizeEmailGenerator: (value) => String(value || '').trim().toLowerCase(),
+    isGeneratedAliasProvider: () => false,
+    reuseOrCreateTab: async () => {},
+    sendToContentScript: async () => {
+      throw new Error('should not use duck generator');
+    },
+    setEmailState: async (email) => {
+      savedEmails.push(email);
+    },
+    throwIfStopped: () => {},
+  });
+
+  const email = await helpers.fetchGeneratedEmail({
+    emailGenerator: 'cloudflare-temp-email',
+  }, {
+    generator: 'cloudflare-temp-email',
+    localPart: 'user',
+  });
+
+  assert.equal(email, 'user@team.mail.example.com');
+  assert.deepEqual(savedEmails, ['user@team.mail.example.com']);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(requests[0].body, {
+    enablePrefix: true,
+    enableRandomSubdomain: false,
+    name: 'user',
+    domain: 'team.mail.example.com',
+  });
+});
+
+test('generated email helper combines default name format with fixed subdomain payload', async () => {
+  const api = loadGeneratedEmailHelpersApi();
+  const requests = [];
+  const savedEmails = [];
+
+  const helpers = api.createGeneratedEmailHelpers({
+    addLog: async () => {},
+    buildGeneratedAliasEmail: () => {
+      throw new Error('should not build managed alias');
+    },
+    buildCloudflareTempEmailEffectiveDomain: (config) => `${config.subdomainPrefix}.${config.domain}`,
+    buildCloudflareTempEmailHeaders: () => ({ 'x-admin-auth': 'admin-secret' }),
+    CLOUDFLARE_TEMP_EMAIL_GENERATOR: 'cloudflare-temp-email',
+    DUCK_AUTOFILL_URL: 'https://duckduckgo.com/email',
+    fetch: async (url, options = {}) => {
+      requests.push({
+        url,
+        method: options.method,
+        body: options.body ? JSON.parse(options.body) : null,
+      });
+      return {
+        ok: true,
+        text: async () => JSON.stringify({ address: `${requests[0].body.name}@team.mail.example.com` }),
+      };
+    },
+    fetchIcloudHideMyEmail: async () => {
+      throw new Error('should not use icloud generator');
+    },
+    getCloudflareTempEmailAddressFromResponse: (payload) => payload.address,
+    getCloudflareTempEmailConfig: () => ({
+      baseUrl: 'https://temp.example.com',
+      adminAuth: 'admin-secret',
+      customAuth: '',
+      effectiveDomain: 'team.mail.example.com',
+      useRandomSubdomain: true,
+      useFixedSubdomain: true,
+      subdomainPrefix: 'team',
+      domain: 'mail.example.com',
+    }),
+    getState: async () => ({
+      mailProvider: '163',
+      emailGenerator: 'cloudflare-temp-email',
+    }),
+    ensureMail2925AccountForFlow: async () => {
+      throw new Error('should not allocate mail2925 account');
+    },
+    joinCloudflareTempEmailUrl: (baseUrl, path) => `${baseUrl}${path}`,
+    normalizeCloudflareDomain: () => '',
+    normalizeCloudflareTempEmailAddress: (value) => String(value || '').trim().toLowerCase(),
+    normalizeEmailGenerator: (value) => String(value || '').trim().toLowerCase(),
+    isGeneratedAliasProvider: () => false,
+    reuseOrCreateTab: async () => {},
+    sendToContentScript: async () => {
+      throw new Error('should not use duck generator');
+    },
+    setEmailState: async (email) => {
+      savedEmails.push(email);
+    },
+    throwIfStopped: () => {},
+  });
+
+  const email = await helpers.fetchGeneratedEmail({
+    emailGenerator: 'cloudflare-temp-email',
+  }, {
+    generator: 'cloudflare-temp-email',
+    date: '2026-05-17T08:09:10.123',
+  });
+
+  assert.match(email, /^[a-z]+20260517080910123[a-z0-9]{4}@team\.mail\.example\.com$/);
+  assert.deepEqual(savedEmails, [email]);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(requests[0].body, {
+    enablePrefix: true,
+    enableRandomSubdomain: false,
+    name: requests[0].body.name,
+    domain: 'team.mail.example.com',
+  });
+  assert.match(requests[0].body.name, /^[a-z]+20260517080910123[a-z0-9]{4}$/);
 });
 
 test('generated email helper honors iCloud always-new fetch mode', async () => {

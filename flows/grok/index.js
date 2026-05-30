@@ -34,7 +34,7 @@
       stepDefinitionMode: 'grok',
       targetSelectorLabel: '来源',
     },
-    baseGroups: ['grok-runtime-status', 'shared-auto-run', 'shared-settings-actions'],
+    baseGroups: ['grok-runtime-status', 'shared-auto-run'],
     targets: {
       webchat2api: {
         id: 'webchat2api',

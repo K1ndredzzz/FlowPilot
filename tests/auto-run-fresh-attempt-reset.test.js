@@ -149,6 +149,23 @@ let currentState = {
   inbucketMailbox: '',
   cloudflareDomain: '',
   cloudflareDomains: [],
+  email: 'stale-round@example.com',
+  registrationEmailState: {
+    current: 'stale-round@example.com',
+    previous: 'older-round@example.com',
+    source: 'generated:duck',
+    updatedAt: 123456789,
+  },
+  step8VerificationTargetEmail: 'bound-round@example.com',
+  lastEmailTimestamp: 987654321,
+  lastSignupCode: '111111',
+  lastLoginCode: '222222',
+  bindEmailSubmitted: true,
+  currentPhoneActivation: {
+    activationId: 'runtime-activation',
+    phoneNumber: '+661111111',
+  },
+  phoneNumber: '+661111111',
   reusablePhoneActivation: {
     activationId: '123456',
     phoneNumber: '66959916439',
@@ -279,6 +296,52 @@ async function runAutoSequenceFromStep() {
   ) {
     throw new Error('fresh auto-run attempt reused stale runtime tab context');
   }
+
+  if (runCalls === 2) {
+    if (state.email !== null) {
+      throw new Error('fresh round must not reuse prior registration email');
+    }
+    if (JSON.stringify(state.registrationEmailState) !== JSON.stringify({
+      current: '',
+      previous: '',
+      source: '',
+      updatedAt: 0,
+    })) {
+      throw new Error('fresh round must clear registration email history');
+    }
+    if (state.step8VerificationTargetEmail !== '') {
+      throw new Error('fresh round must clear bound-email target');
+    }
+    if (state.lastEmailTimestamp !== null) {
+      throw new Error('fresh round must clear email timestamp');
+    }
+    if (state.lastSignupCode !== '') {
+      throw new Error('fresh round must clear signup code cache');
+    }
+    if (state.lastLoginCode !== '') {
+      throw new Error('fresh round must clear login code cache');
+    }
+    if (state.bindEmailSubmitted !== false) {
+      throw new Error('fresh round must clear bind-email marker');
+    }
+    if (state.currentPhoneActivation !== null) {
+      throw new Error('fresh round must clear runtime phone activation');
+    }
+    if (state.phoneNumber !== '') {
+      throw new Error('fresh round must clear runtime phone number');
+    }
+  }
+
+  currentState = {
+    ...currentState,
+    email: 'fresh-round-' + runCalls + '@example.com',
+    registrationEmailState: {
+      current: 'fresh-round-' + runCalls + '@example.com',
+      previous: 'fresh-round-' + runCalls + '@example.com',
+      source: 'generated:duck',
+      updatedAt: 22334455 + runCalls,
+    },
+  };
 
   currentState = {
     ...currentState,

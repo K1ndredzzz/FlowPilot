@@ -47,8 +47,7 @@
     "openai-phone",
     "shared-auto-run",
     "openai-oauth",
-    "openai-step6",
-    "shared-settings-actions"
+    "openai-step6"
   ],
   "targets": {
     "cpa": {
