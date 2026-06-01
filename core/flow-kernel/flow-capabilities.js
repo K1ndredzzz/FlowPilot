@@ -57,6 +57,7 @@
 
   const DEFAULT_TARGET_CAPABILITIES = Object.freeze({
     supportsPhoneSignup: true,
+    supportsPhoneVerificationSettings: true,
     requiresPhoneSignupWarning: false,
     usesOauthTimeoutBudget: false,
     supportedPlusAccountAccessStrategies: Object.freeze([PLUS_ACCOUNT_ACCESS_STRATEGY_OAUTH]),
@@ -70,6 +71,13 @@
     'signupMethod',
     'plusAccountAccessStrategy',
     'targetId',
+  ]);
+  const OPENAI_WEBCHAT_RELEVANT_KEYS = Object.freeze([
+    'activeFlowId',
+    'targetId',
+    'openaiWebchatUrl',
+    'openaiWebchatAdminKey',
+    'openaiWebchatUploadEnabled',
   ]);
 
   const OPENAI_TARGET_CAPABILITIES = Object.freeze(
@@ -186,6 +194,18 @@
     return normalized || String(targetId || '').trim();
   }
 
+  function isPlainObject(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  function cleanString(value = '') {
+    return String(value || '').trim();
+  }
+
+  function hasOwn(value, key) {
+    return Boolean(value) && Object.prototype.hasOwnProperty.call(value, key);
+  }
+
   function createFlowCapabilityRegistry(deps = {}) {
     const {
       defaultFlowCapabilities = DEFAULT_FLOW_CAPABILITIES,
@@ -199,6 +219,85 @@
         defaultFlowId,
       })
       : null;
+
+    function getNormalizedSettingsState(state = {}) {
+      if (!settingsSchema?.normalizeSettingsState) {
+        return null;
+      }
+      try {
+        return settingsSchema.normalizeSettingsState({
+          ...(isPlainObject(state) ? state : {}),
+          ...(isPlainObject(state?.settingsState) ? { settingsState: state.settingsState } : {}),
+          activeFlowId: state?.activeFlowId ?? state?.settingsState?.activeFlowId ?? defaultFlowId,
+        });
+      } catch {
+        return null;
+      }
+    }
+
+    function getOpenAiFlowSettingsFromState(state = {}) {
+      const normalizedState = getNormalizedSettingsState(state);
+      if (isPlainObject(normalizedState?.flows?.openai)) {
+        return normalizedState.flows.openai;
+      }
+      if (isPlainObject(state?.settingsState?.flows?.openai)) {
+        return state.settingsState.flows.openai;
+      }
+      if (isPlainObject(state?.flows?.openai)) {
+        return state.flows.openai;
+      }
+      return {};
+    }
+
+    function resolveOpenAiWebchatState(state = {}, targetId = '') {
+      const openAiFlow = getOpenAiFlowSettingsFromState(state);
+      const normalizedState = getNormalizedSettingsState(state);
+      const grokFlow = isPlainObject(normalizedState?.flows?.grok)
+        ? normalizedState.flows.grok
+        : (isPlainObject(state?.settingsState?.flows?.grok) ? state.settingsState.flows.grok : {});
+      const targetConfig = isPlainObject(openAiFlow?.targets?.webchat)
+        ? openAiFlow.targets.webchat
+        : {};
+      const grokTargetConfig = isPlainObject(grokFlow?.targets?.webchat2api)
+        ? grokFlow.targets.webchat2api
+        : {};
+      const baseUrl = cleanString(hasOwn(state, 'openaiWebchatUrl')
+        ? state.openaiWebchatUrl
+        : (hasOwn(state, 'grokWebchat2ApiUrl') ? state.grokWebchat2ApiUrl : (targetConfig.baseUrl || grokTargetConfig.baseUrl)));
+      const apiKey = cleanString(hasOwn(state, 'openaiWebchatAdminKey')
+        ? state.openaiWebchatAdminKey
+        : (hasOwn(state, 'grokWebchat2ApiAdminKey') ? state.grokWebchat2ApiAdminKey : (targetConfig.apiKey || grokTargetConfig.apiKey)));
+      const uploadEnabled = false;
+      const normalizedTargetId = String(targetId || '').trim().toLowerCase();
+      const targetIsWebchat = normalizedTargetId === 'webchat';
+      const missingFields = [];
+      if (!baseUrl) missingFields.push('baseUrl');
+      if (!apiKey) missingFields.push('apiKey');
+      const configComplete = missingFields.length === 0;
+      const additionalUploadEnabled = false;
+      return {
+        additionalUploadEnabled,
+        configComplete,
+        missingFields,
+        targetIsWebchat,
+        uploadEnabled,
+        uploadRequired: targetIsWebchat || additionalUploadEnabled,
+      };
+    }
+
+    function buildOpenAiWebchatValidationError(capabilityState = {}) {
+      const webchatState = capabilityState.openaiWebchat || {};
+      if (webchatState.targetIsWebchat) {
+        return {
+          code: 'openai_webchat_config_required',
+          message: 'webchat 来源需要先完成地址和 Admin Key 配置。',
+        };
+      }
+      return {
+        code: 'openai_webchat_upload_config_required',
+        message: '请选择 webchat 来源并完成配置后再开启同步。',
+      };
+    }
 
     function getFlowCapabilities(flowId) {
       const normalizedFlowId = normalizeCapabilityFlowId(flowId, defaultFlowId);
@@ -310,10 +409,13 @@
       const targetState = activeFlowId === 'openai'
         ? getOpenAiTargetCapabilities(effectiveTargetId)
         : defaultTargetCapabilities;
+      const canShowPhoneSettings = activeFlowId === 'openai'
+        && Boolean(flowState.supportsPhoneVerificationSettings)
+        && targetState.supportsPhoneVerificationSettings !== false;
       const runtimeLocks = {
         autoRunLocked: Boolean(options?.autoRunLocked ?? state?.autoRunLocked),
         accountContribution: Boolean(flowState.supportsAccountContribution) && Boolean(state?.accountContributionEnabled),
-        phoneVerificationEnabled: activeFlowId === 'openai' && flowState.supportsPhoneVerificationSettings && Boolean(state?.phoneVerificationEnabled),
+        phoneVerificationEnabled: canShowPhoneSettings && Boolean(state?.phoneVerificationEnabled),
         plusModeEnabled: activeFlowId === 'openai' && flowState.supportsPlusMode && Boolean(state?.plusModeEnabled),
         settingsMenuLocked: Boolean(options?.settingsMenuLocked ?? state?.settingsMenuLocked),
       };
@@ -376,15 +478,26 @@
         && isRegisteredFlowId(activeFlowId)
         ? flowRegistryApi.getVisibleGroupIds(activeFlowId, effectiveTargetId)
         : [];
+      const openaiWebchat = activeFlowId === 'openai'
+        ? resolveOpenAiWebchatState(state, effectiveTargetId)
+        : {
+          additionalUploadEnabled: false,
+          configComplete: true,
+          missingFields: [],
+          targetIsWebchat: false,
+          uploadEnabled: false,
+          uploadRequired: false,
+        };
 
       return {
         activeFlowId,
         canShowContributionMode: Boolean(flowState.supportsAccountContribution),
         canShowLuckmail: activeFlowId === 'openai' && Boolean(flowState.supportsLuckmail),
-        canShowPhoneSettings: activeFlowId === 'openai' && Boolean(flowState.supportsPhoneVerificationSettings),
+        canShowPhoneSettings,
         canShowPlusSettings: activeFlowId === 'openai' && Boolean(flowState.supportsPlusMode),
         canSwitchFlow: Boolean(flowState.canSwitchFlow),
         canEditPlusAccountAccessStrategy,
+        canSelectPhoneSignup: canSelectPhoneSignup,
         canUsePhoneSignup: canSelectPhoneSignup,
         canUseSelectedTarget: targetSupported,
         effectivePlusAccountAccessStrategy,
@@ -392,6 +505,7 @@
         effectiveSignupMethods,
         effectiveTargetId,
         flowCapabilities: flowState,
+        openaiWebchat,
         panelCapabilities: targetState,
         requestedPlusAccountAccessStrategy,
         requestedSignupMethod,
@@ -406,6 +520,7 @@
           plusAccountAccessStrategy: effectivePlusAccountAccessStrategy,
           plusModeEnabled: runtimeLocks.plusModeEnabled,
           phoneVerificationEnabled: runtimeLocks.phoneVerificationEnabled,
+          openaiWebchatUploadEnabled: openaiWebchat.uploadRequired,
           signupMethod: effectiveSignupMethod,
         },
         supportedPanelModes: supportedTargetIds,
@@ -494,6 +609,14 @@
         errors.push(buildPhoneSignupValidationError(capabilityState));
       }
 
+      if (
+        capabilityState.activeFlowId === 'openai'
+        && capabilityState.openaiWebchat?.uploadRequired
+        && !capabilityState.openaiWebchat?.configComplete
+      ) {
+        errors.push(buildOpenAiWebchatValidationError(capabilityState));
+      }
+
       return {
         ok: errors.length === 0,
         errors,
@@ -515,6 +638,8 @@
       const flowState = capabilityState.flowCapabilities || {};
       const requestedPhoneSignup = capabilityState.requestedSignupMethod === SIGNUP_METHOD_PHONE;
       const shouldReconcileSignupMethod = MODE_SWITCH_RELEVANT_KEYS.some((key) => changedKeySet.has(key));
+      const shouldReconcileOpenAiWebchatUpload = capabilityState.activeFlowId === 'openai'
+        && OPENAI_WEBCHAT_RELEVANT_KEYS.some((key) => changedKeySet.has(key));
 
       if (
         changedKeySet.has('targetId')
@@ -552,7 +677,7 @@
       if (
         changedKeySet.has('phoneVerificationEnabled')
         && Boolean(state?.phoneVerificationEnabled)
-        && !flowState.supportsPhoneVerificationSettings
+        && !capabilityState.canShowPhoneSettings
       ) {
         normalizedUpdates.phoneVerificationEnabled = false;
         errors.push({
@@ -568,6 +693,15 @@
       ) {
         normalizedUpdates.signupMethod = capabilityState.effectiveSignupMethod;
         errors.push(buildPhoneSignupValidationError(capabilityState));
+      }
+
+      if (
+        shouldReconcileOpenAiWebchatUpload
+        && capabilityState.openaiWebchat?.additionalUploadEnabled
+        && !capabilityState.openaiWebchat?.configComplete
+      ) {
+        normalizedUpdates.openaiWebchatUploadEnabled = false;
+        errors.push(buildOpenAiWebchatValidationError(capabilityState));
       }
 
       return {

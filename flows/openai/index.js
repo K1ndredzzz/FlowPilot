@@ -35,7 +35,8 @@
     "supportedTargetIds": [
       "cpa",
       "sub2api",
-      "codex2api"
+      "codex2api",
+      "webchat"
     ],
     "supportsLuckmail": true,
     "canSwitchFlow": true,
@@ -44,7 +45,6 @@
   },
   "baseGroups": [
     "openai-plus",
-    "openai-phone",
     "shared-auto-run",
     "openai-oauth",
     "openai-step6"
@@ -59,6 +59,7 @@
         "localCpaStep9Mode": "submit"
       },
       "groups": [
+        "openai-phone",
         "openai-target-cpa"
       ]
     },
@@ -78,6 +79,7 @@
         "sub2apiDefaultProxyName": ""
       },
       "groups": [
+        "openai-phone",
         "openai-target-sub2api"
       ]
     },
@@ -89,7 +91,19 @@
         "codex2apiAdminKey": ""
       },
       "groups": [
+        "openai-phone",
         "openai-target-codex2api"
+      ]
+    },
+    "webchat": {
+      "id": "webchat",
+      "label": "webchat",
+      "defaultState": {
+        "baseUrl": "",
+        "apiKey": ""
+      },
+      "groups": [
+        "openai-target-webchat"
       ]
     }
   },
@@ -113,6 +127,9 @@
         "fromStep": 1,
         "toStep": 11
       }
+    },
+    "webchatUpload": {
+      "enabled": false
     }
   },
   "runtimeSources": {
@@ -257,6 +274,16 @@
         }
       ]
     },
+    "openai-webchat": {
+      "flowId": "openai",
+      "kind": "remote-publisher",
+      "label": "webchat",
+      "readyPolicy": "disabled",
+      "family": "openai-webchat-family",
+      "driverId": "flows/openai/background/publisher-webchat",
+      "cleanupScopes": [],
+      "familyMatchers": []
+    },
     "plus-checkout": {
       "flowId": "openai",
       "kind": "flow-page",
@@ -292,21 +319,6 @@
         }
       ]
     },
-    "gopay-flow": {
-      "flowId": "openai",
-      "kind": "flow-page",
-      "label": "GoPay 授权页",
-      "readyPolicy": "allow-child-frame",
-      "family": "gopay-flow-family",
-      "driverId": "flows/openai/content/gopay-flow",
-      "cleanupScopes": [],
-      "familyMatchers": [
-        {
-          "hostnameRegex": "gopay|gojek",
-          "hostnameRegexFlags": "i"
-        }
-      ]
-    }
   },
   "driverDefinitions": {
     "flows/openai/content/openai-auth": {
@@ -366,10 +378,10 @@
         "paypal-hosted-review"
       ]
     },
-    "flows/openai/content/gopay-flow": {
-      "sourceId": "gopay-flow",
+    "flows/openai/background/publisher-webchat": {
+      "sourceId": "openai-webchat",
       "commands": [
-        "gopay-subscription-confirm"
+        "openai-upload-session-to-webchat"
       ]
     }
   },
@@ -403,6 +415,20 @@
         "row-codex2api-url",
         "row-codex2api-admin-key"
       ]
+    },
+    "openai-target-webchat": {
+      "id": "openai-target-webchat",
+      "label": "webchat 来源",
+      "rowIds": [
+        "row-openai-webchat-url",
+        "row-openai-webchat-key",
+        "row-openai-webchat-upload-status"
+      ]
+    },
+    "openai-webchat-upload": {
+      "id": "openai-webchat-upload",
+      "label": "webchat",
+      "rowIds": []
     },
     "openai-plus": {
       "id": "openai-plus",
@@ -457,6 +483,14 @@
     },
     "codex2api": {
       "supportsPhoneSignup": true,
+      "requiresPhoneSignupWarning": false,
+      "supportedPlusAccountAccessStrategies": [
+        "oauth"
+      ]
+    },
+    "webchat": {
+      "supportsPhoneSignup": false,
+      "supportsPhoneVerificationSettings": false,
       "requiresPhoneSignupWarning": false,
       "supportedPlusAccountAccessStrategies": [
         "oauth"

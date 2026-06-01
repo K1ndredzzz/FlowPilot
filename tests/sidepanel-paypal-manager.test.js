@@ -18,7 +18,7 @@ test('sidepanel loads reusable form dialog and paypal manager before sidepanel b
   assert.ok(managerIndex < sidepanelIndex);
 });
 
-test('sidepanel html contains paypal select and GoPay controls', () => {
+test('sidepanel html contains paypal select and no removed payment controls', () => {
   const html = fs.readFileSync('sidepanel/sidepanel.html', 'utf8');
   const plusAccountAccessStrategyIndex = html.indexOf('id="row-plus-account-access-strategy"');
   const plusPaymentMethodIndex = html.indexOf('id="row-plus-payment-method"');
@@ -35,12 +35,6 @@ test('sidepanel html contains paypal select and GoPay controls', () => {
   assert.match(html, /id="btn-paypal-account-menu"/);
   assert.match(html, /id="paypal-account-menu"/);
   assert.match(html, /id="btn-add-paypal-account"/);
-  assert.match(html, /id="row-gopay-phone"/);
-  assert.match(html, /id="input-gopay-phone"/);
-  assert.match(html, /id="row-gopay-otp"/);
-  assert.match(html, /id="input-gopay-otp"/);
-  assert.match(html, /id="row-gopay-pin"/);
-  assert.match(html, /id="input-gopay-pin"/);
   assert.match(html, /id="shared-form-modal"/);
 });
 

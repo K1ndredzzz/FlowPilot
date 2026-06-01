@@ -23,19 +23,10 @@ const PLUS_CHECKOUT_CONFIGS = {
     checkoutUrlPrefix: 'https://chatgpt.com/checkout/openai_ie/',
     paymentLabel: 'PayPal',
   },
-  gopay: {
-    billing_details: {
-      country: 'ID',
-      currency: 'IDR',
-    },
-    checkoutUrlPrefix: 'https://chatgpt.com/checkout/openai_llc/',
-    paymentLabel: 'GoPay',
-  },
 };
 const PAYPAL_DIAGNOSTIC_LOG_INTERVAL_MS = 5000;
 const PLUS_PAYMENT_METHOD_PAYPAL = 'paypal';
 const PLUS_PAYMENT_METHOD_PAYPAL_HOSTED = 'paypal-hosted';
-const PLUS_PAYMENT_METHOD_GOPAY = 'gopay';
 const PAYMENT_METHOD_CONFIGS = {
   [PLUS_PAYMENT_METHOD_PAYPAL]: {
     id: PLUS_PAYMENT_METHOD_PAYPAL,
@@ -59,17 +50,6 @@ const PAYMENT_METHOD_CONFIGS = {
     },
     patterns: [/paypal/i],
   },
-  [PLUS_PAYMENT_METHOD_GOPAY]: {
-    id: PLUS_PAYMENT_METHOD_GOPAY,
-    label: 'GoPay',
-    diagnosticLabel: 'GoPay',
-    checkoutMerchantPath: 'openai_llc',
-    billingDetails: {
-      country: 'ID',
-      currency: 'IDR',
-    },
-    patterns: [/gopay|go\s*pay/i],
-  },
 };
 
 async function performOperationWithDelay(metadata, operation) {
@@ -86,7 +66,6 @@ if (document.documentElement.getAttribute(PLUS_CHECKOUT_LISTENER_SENTINEL) !== '
       message.type === 'CREATE_PLUS_CHECKOUT'
       || message.type === 'FILL_PLUS_BILLING_AND_SUBMIT'
       || message.type === 'PLUS_CHECKOUT_SELECT_PAYPAL'
-      || message.type === 'PLUS_CHECKOUT_SELECT_GOPAY'
       || message.type === 'PLUS_CHECKOUT_FILL_BILLING_ADDRESS'
       || message.type === 'PLUS_CHECKOUT_FILL_ADDRESS_QUERY'
       || message.type === 'PLUS_CHECKOUT_SELECT_ADDRESS_SUGGESTION'
@@ -120,8 +99,6 @@ async function handlePlusCheckoutCommand(message) {
       return fillPlusBillingAndSubmit(message.payload || {});
     case 'PLUS_CHECKOUT_SELECT_PAYPAL':
       return selectPlusPayPalPaymentMethod(message.payload || {});
-    case 'PLUS_CHECKOUT_SELECT_GOPAY':
-      return selectPlusGoPayPaymentMethod(message.payload || {});
     case 'PLUS_CHECKOUT_FILL_BILLING_ADDRESS':
       return fillPlusBillingAddress(message.payload || {});
     case 'PLUS_CHECKOUT_FILL_ADDRESS_QUERY':
@@ -603,9 +580,7 @@ function normalizePlusPaymentMethod(value = '') {
   if (normalized === paypalHostedValue || normalized === 'paypal_direct' || normalized === 'paypal-direct') {
     return paypalHostedValue;
   }
-  return normalized === PLUS_PAYMENT_METHOD_GOPAY
-    ? PLUS_PAYMENT_METHOD_GOPAY
-    : PLUS_PAYMENT_METHOD_PAYPAL;
+  return PLUS_PAYMENT_METHOD_PAYPAL;
 }
 
 function getPaymentMethodConfig(method = PLUS_PAYMENT_METHOD_PAYPAL) {
@@ -670,10 +645,6 @@ function getPayPalSearchCandidates() {
   return getPaymentMethodSearchCandidates(PLUS_PAYMENT_METHOD_PAYPAL);
 }
 
-function getGoPaySearchCandidates() {
-  return getPaymentMethodSearchCandidates(PLUS_PAYMENT_METHOD_GOPAY);
-}
-
 function findPaymentMethodTarget(method = PLUS_PAYMENT_METHOD_PAYPAL) {
   const config = getPaymentMethodConfig(method);
   const directClickable = findClickableByText(config.patterns);
@@ -708,10 +679,6 @@ function findPayPalPaymentMethodTarget() {
   return findPaymentMethodTarget(PLUS_PAYMENT_METHOD_PAYPAL);
 }
 
-function findGoPayPaymentMethodTarget() {
-  return findPaymentMethodTarget(PLUS_PAYMENT_METHOD_GOPAY);
-}
-
 function summarizeElementForDebug(el) {
   if (!el) return null;
   const rect = el.getBoundingClientRect();
@@ -735,13 +702,9 @@ function getPayPalCandidateSummaries(limit = 6) {
   return getPaymentMethodCandidateSummaries(PLUS_PAYMENT_METHOD_PAYPAL, limit);
 }
 
-function getGoPayCandidateSummaries(limit = 6) {
-  return getPaymentMethodCandidateSummaries(PLUS_PAYMENT_METHOD_GOPAY, limit);
-}
-
 function getPaymentTextPreview(limit = 10) {
   const seen = new Set();
-  const pattern = /gopay|go\s*pay|paypal|card|payment|billing|subscribe|pay|银行卡|付款|支付|账单|订阅/i;
+  const pattern = /paypal|card|payment|billing|subscribe|pay|银行卡|付款|支付|账单|订阅/i;
   return getVisibleControls('button, a, label, [role="button"], [role="radio"], input[type="radio"], input[type="button"], input[type="submit"], [data-testid]')
     .map((el) => getCombinedSearchText(el))
     .filter((text) => text && pattern.test(text))
@@ -758,10 +721,6 @@ function getPayPalDiagnostics(reason = '') {
   return getPaymentMethodDiagnostics(PLUS_PAYMENT_METHOD_PAYPAL, reason);
 }
 
-function getGoPayDiagnostics(reason = '') {
-  return getPaymentMethodDiagnostics(PLUS_PAYMENT_METHOD_GOPAY, reason);
-}
-
 function getPaymentMethodDiagnostics(method = PLUS_PAYMENT_METHOD_PAYPAL, reason = '') {
   const config = getPaymentMethodConfig(method);
   return {
@@ -772,7 +731,7 @@ function getPaymentMethodDiagnostics(method = PLUS_PAYMENT_METHOD_PAYPAL, reason
     paymentMethodLabel: config.label,
     paymentCandidates: getPaymentMethodCandidateSummaries(config.id),
     paypalCandidates: getPayPalCandidateSummaries(),
-    gopayCandidates: getGoPayCandidateSummaries(),
+
     paymentTextPreview: getPaymentTextPreview(),
     cardFieldsVisible: hasCreditCardFields(),
     billingFieldsVisible: hasBillingAddressFields(),
@@ -790,10 +749,6 @@ function writePaymentMethodDiagnostics(method = PLUS_PAYMENT_METHOD_PAYPAL, reas
 
 function writePayPalDiagnostics(reason, level = 'info') {
   return writePaymentMethodDiagnostics(PLUS_PAYMENT_METHOD_PAYPAL, reason, level);
-}
-
-function writeGoPayDiagnostics(reason, level = 'info') {
-  return writePaymentMethodDiagnostics(PLUS_PAYMENT_METHOD_GOPAY, reason, level);
 }
 
 function buildPlusCheckoutPayload(paymentMethod = PLUS_PAYMENT_METHOD_PAYPAL) {
@@ -924,25 +879,12 @@ async function selectPayPalPaymentMethod() {
   return selectPaymentMethod(PLUS_PAYMENT_METHOD_PAYPAL);
 }
 
-async function selectGoPayPaymentMethod() {
-  return selectPaymentMethod(PLUS_PAYMENT_METHOD_GOPAY);
-}
-
 async function selectPlusPayPalPaymentMethod() {
   await waitForDocumentComplete();
   await selectPaymentMethod(PLUS_PAYMENT_METHOD_PAYPAL);
   return {
     paymentSelected: true,
     paymentMethod: PLUS_PAYMENT_METHOD_PAYPAL,
-  };
-}
-
-async function selectPlusGoPayPaymentMethod() {
-  await waitForDocumentComplete();
-  await selectPaymentMethod(PLUS_PAYMENT_METHOD_GOPAY);
-  return {
-    paymentSelected: true,
-    paymentMethod: PLUS_PAYMENT_METHOD_GOPAY,
   };
 }
 
@@ -1050,20 +992,12 @@ function hasSelectedPayPalControl() {
   return hasSelectedPaymentMethodControl(PLUS_PAYMENT_METHOD_PAYPAL);
 }
 
-function hasSelectedGoPayControl() {
-  return hasSelectedPaymentMethodControl(PLUS_PAYMENT_METHOD_GOPAY);
-}
-
 function isPaymentMethodActive(method = PLUS_PAYMENT_METHOD_PAYPAL) {
   return hasSelectedPaymentMethodControl(method);
 }
 
 function isPayPalPaymentMethodActive() {
   return isPaymentMethodActive(PLUS_PAYMENT_METHOD_PAYPAL);
-}
-
-function isGoPayPaymentMethodActive() {
-  return isPaymentMethodActive(PLUS_PAYMENT_METHOD_GOPAY);
 }
 
 async function waitForPaymentMethodActive(method = PLUS_PAYMENT_METHOD_PAYPAL, timeoutMs = 5000) {
@@ -1805,9 +1739,9 @@ async function inspectPlusCheckoutState(options = {}) {
     readyState: document.readyState,
     countryText: readCountryText(),
     hasPayPal: Boolean(findPayPalPaymentMethodTarget()),
-    hasGoPay: Boolean(findGoPayPaymentMethodTarget()),
+
     paypalCandidates: getPayPalCandidateSummaries(),
-    gopayCandidates: getGoPayCandidateSummaries(),
+
     paymentTextPreview: getPaymentTextPreview(),
     cardFieldsVisible: hasCreditCardFields(),
     billingFieldsVisible: hasBillingAddressFields(),

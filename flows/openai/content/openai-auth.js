@@ -4732,6 +4732,18 @@ function createStep6AddEmailSuccessResult(snapshot, options = {}) {
   };
 }
 
+function createStep6AddPhoneSuccessResult(snapshot, options = {}) {
+  return {
+    ...createStep6SuccessResult(snapshot, {
+      ...options,
+      via: options.via || 'add_phone_page',
+      loginVerificationRequestedAt: null,
+      skipLoginVerificationStep: true,
+    }),
+    addPhonePage: true,
+  };
+}
+
 function createStep6RecoverableResult(reason, snapshot, options = {}) {
   return {
     step6Outcome: 'recoverable',
@@ -5984,6 +5996,90 @@ async function waitForChooseAccountTransition(timeout = 15000) {
   return snapshot;
 }
 
+async function resolveChooseAccountTransitionResult(snapshot, payload, visibleStep, options = {}) {
+  const resolvedSnapshot = normalizeStep6Snapshot(snapshot || inspectLoginAuthState());
+  if (!resolvedSnapshot) {
+    return null;
+  }
+
+  const {
+    oauthConsentVia = 'choose_account_oauth_consent_page',
+    oauthAuthorizationVia = 'choose_account_oauth_authorization_route',
+    addEmailVia = 'choose_account_add_email_page',
+    addPhoneVia = 'choose_account_add_phone_page',
+    verificationVia = 'choose_account_verification_page',
+    phoneVerificationVia = 'choose_account_phone_verification_page',
+    timeoutReason = 'login_timeout_after_choose_account',
+    timeoutMessage = 'Clicking the existing OpenAI account entered the login timeout page.',
+  } = options;
+
+  if (resolvedSnapshot.state === 'oauth_consent_page') {
+    return createStep6OAuthConsentSuccessResult(resolvedSnapshot, {
+      via: oauthConsentVia,
+    });
+  }
+  if (resolvedSnapshot.oauthAuthorizationRoute || isPostChooseAccountOAuthRoute(resolvedSnapshot)) {
+    return createStep6OAuthConsentSuccessResult(resolvedSnapshot, {
+      via: oauthAuthorizationVia,
+    });
+  }
+  if (resolvedSnapshot.state === 'unknown' || resolvedSnapshot.state === 'choose_account_page') {
+    return null;
+  }
+  if (resolvedSnapshot.state === 'add_email_page') {
+    return createStep6AddEmailSuccessResult(resolvedSnapshot, {
+      via: addEmailVia,
+    });
+  }
+  if (resolvedSnapshot.state === 'add_phone_page') {
+    return createStep6AddPhoneSuccessResult(resolvedSnapshot, {
+      via: addPhoneVia,
+    });
+  }
+  if (resolvedSnapshot.state === 'verification_page') {
+    return finalizeStep6VerificationReady({
+      visibleStep,
+      loginVerificationRequestedAt: null,
+      via: verificationVia,
+    });
+  }
+  if (resolvedSnapshot.state === 'phone_verification_page') {
+    return finalizeStep6VerificationReady({
+      visibleStep,
+      loginVerificationRequestedAt: null,
+      via: phoneVerificationVia,
+      allowPhoneVerificationPage: true,
+    });
+  }
+  if (resolvedSnapshot.state === 'entry_page') {
+    return step6OpenLoginEntry(payload, resolvedSnapshot);
+  }
+  if (resolvedSnapshot.state === 'email_page') {
+    return step6LoginFromEmailPage(payload, resolvedSnapshot);
+  }
+  if (resolvedSnapshot.state === 'password_page') {
+    return step6LoginFromPasswordPage(payload, resolvedSnapshot);
+  }
+  if (resolvedSnapshot.state === 'phone_entry_page') {
+    return step6LoginFromPhonePage(payload, resolvedSnapshot);
+  }
+  if (resolvedSnapshot.state === 'login_timeout_error_page') {
+    const transition = await createStep6LoginTimeoutRecoveryTransition(
+      timeoutReason,
+      resolvedSnapshot,
+      timeoutMessage,
+      { visibleStep, allowPhoneVerificationPage: true }
+    );
+    if (transition.action === 'done') return transition.result;
+    if (transition.action === 'phone') return step6LoginFromPhonePage(payload, transition.snapshot);
+    if (transition.action === 'email') return step6LoginFromEmailPage(payload, transition.snapshot);
+    if (transition.action === 'password') return step6LoginFromPasswordPage(payload, transition.snapshot);
+    return transition.result;
+  }
+
+  return null;
+}
+
 async function step6ChooseExistingAccount(payload, snapshot) {
   const performOperationWithDelay = typeof getOperationDelayRunner === 'function'
     ? getOperationDelayRunner()
@@ -6014,29 +6110,12 @@ async function step6ChooseExistingAccount(payload, snapshot) {
     && chooseAccountAction.snapshot.state !== 'unknown'
     && chooseAccountAction.snapshot.state !== 'choose_account_page'
   ) {
-    const resolvedSnapshot = chooseAccountAction.snapshot;
-    if (resolvedSnapshot.state === 'oauth_consent_page') {
-      return createStep6OAuthConsentSuccessResult(resolvedSnapshot, {
-        via: 'choose_account_oauth_consent_page',
-      });
-    }
-    if (resolvedSnapshot.oauthAuthorizationRoute || isPostChooseAccountOAuthRoute(resolvedSnapshot)) {
-      return createStep6OAuthConsentSuccessResult(resolvedSnapshot, {
-        via: 'choose_account_oauth_authorization_route',
-      });
-    }
-    if (resolvedSnapshot.state === 'email_page') {
-      return step6LoginFromEmailPage(payload, resolvedSnapshot);
-    }
-    if (resolvedSnapshot.state === 'entry_page') {
-      return step6OpenLoginEntry(payload, resolvedSnapshot);
-    }
-    if (resolvedSnapshot.state === 'password_page') {
-      return step6LoginFromPasswordPage(payload, resolvedSnapshot);
-    }
-    if (resolvedSnapshot.state === 'phone_entry_page') {
-      return step6LoginFromPhonePage(payload, resolvedSnapshot);
-    }
+    const routedResult = await resolveChooseAccountTransitionResult(
+      chooseAccountAction.snapshot,
+      payload,
+      visibleStep
+    );
+    if (routedResult) return routedResult;
   }
 
   const target = chooseAccountAction.target;
@@ -6051,18 +6130,22 @@ async function step6ChooseExistingAccount(payload, snapshot) {
         simulateClick(otherAccountButton);
       });
       const otherAccountSnapshot = normalizeStep6Snapshot(await waitForChooseAccountTransition(15000));
-      if (otherAccountSnapshot.state === 'email_page') {
-        return step6LoginFromEmailPage(payload, otherAccountSnapshot);
-      }
-      if (otherAccountSnapshot.state === 'entry_page') {
-        return step6OpenLoginEntry(payload, otherAccountSnapshot);
-      }
-      if (otherAccountSnapshot.state === 'password_page') {
-        return step6LoginFromPasswordPage(payload, otherAccountSnapshot);
-      }
-      if (otherAccountSnapshot.state === 'phone_entry_page') {
-        return step6LoginFromPhonePage(payload, otherAccountSnapshot);
-      }
+      const otherAccountRoutedResult = await resolveChooseAccountTransitionResult(
+        otherAccountSnapshot,
+        payload,
+        visibleStep,
+        {
+          oauthConsentVia: 'choose_other_account_oauth_consent_page',
+          oauthAuthorizationVia: 'choose_other_account_oauth_authorization_route',
+          addEmailVia: 'choose_other_account_add_email_page',
+          addPhoneVia: 'choose_other_account_add_phone_page',
+          verificationVia: 'choose_other_account_verification_page',
+          phoneVerificationVia: 'choose_other_account_phone_verification_page',
+          timeoutReason: 'login_timeout_after_choose_other_account',
+          timeoutMessage: 'Clicking another-account login from OpenAI choose-account entered the login timeout page.',
+        }
+      );
+      if (otherAccountRoutedResult) return otherAccountRoutedResult;
       return createStep6RecoverableResult('choose_account_other_account_transition_stalled', otherAccountSnapshot, {
         message: `Clicked another-account login because ${email} was not listed, but the page did not enter a supported login state.`,
       });
@@ -6079,58 +6162,8 @@ async function step6ChooseExistingAccount(payload, snapshot) {
   });
 
   const nextSnapshot = normalizeStep6Snapshot(await waitForChooseAccountTransition(15000));
-  if (nextSnapshot.state === 'oauth_consent_page') {
-    return createStep6OAuthConsentSuccessResult(nextSnapshot, {
-      via: 'choose_account_oauth_consent_page',
-    });
-  }
-  if (nextSnapshot.oauthAuthorizationRoute || isPostChooseAccountOAuthRoute(nextSnapshot)) {
-    return createStep6OAuthConsentSuccessResult(nextSnapshot, {
-      via: 'choose_account_oauth_authorization_route',
-    });
-  }
-  if (nextSnapshot.state === 'add_email_page') {
-    return createStep6AddEmailSuccessResult(nextSnapshot, {
-      via: 'choose_account_add_email_page',
-    });
-  }
-  if (nextSnapshot.state === 'verification_page') {
-    return finalizeStep6VerificationReady({
-      visibleStep,
-      loginVerificationRequestedAt: null,
-      via: 'choose_account_verification_page',
-    });
-  }
-  if (nextSnapshot.state === 'phone_verification_page') {
-    return finalizeStep6VerificationReady({
-      visibleStep,
-      loginVerificationRequestedAt: null,
-      via: 'choose_account_phone_verification_page',
-      allowPhoneVerificationPage: true,
-    });
-  }
-  if (nextSnapshot.state === 'password_page') {
-    return step6LoginFromPasswordPage(payload, nextSnapshot);
-  }
-  if (nextSnapshot.state === 'email_page') {
-    return step6LoginFromEmailPage(payload, nextSnapshot);
-  }
-  if (nextSnapshot.state === 'phone_entry_page') {
-    return step6LoginFromPhonePage(payload, nextSnapshot);
-  }
-  if (nextSnapshot.state === 'login_timeout_error_page') {
-    const transition = await createStep6LoginTimeoutRecoveryTransition(
-      'login_timeout_after_choose_account',
-      nextSnapshot,
-      'Clicking the existing OpenAI account entered the login timeout page.',
-      { visibleStep }
-    );
-    if (transition.action === 'done') return transition.result;
-    if (transition.action === 'phone') return step6LoginFromPhonePage(payload, transition.snapshot);
-    if (transition.action === 'email') return step6LoginFromEmailPage(payload, transition.snapshot);
-    if (transition.action === 'password') return step6LoginFromPasswordPage(payload, transition.snapshot);
-    return transition.result;
-  }
+  const routedResult = await resolveChooseAccountTransitionResult(nextSnapshot, payload, visibleStep);
+  if (routedResult) return routedResult;
 
   return createStep6RecoverableResult('choose_account_transition_stalled', nextSnapshot, {
     message: `Clicked ${email} on OpenAI choose-account page, but the page did not enter a supported next state.`,
@@ -7163,6 +7196,116 @@ function getStep5AuthRetryPageState() {
   return null;
 }
 
+function isStep5PasskeyEnrollPage(rawUrl = location.href) {
+  const url = String(rawUrl || '').trim();
+  if (!url) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    const host = String(parsed.hostname || '').toLowerCase();
+    const path = String(parsed.pathname || '');
+    if (!['auth.openai.com', 'auth0.openai.com', 'accounts.openai.com'].includes(host)) {
+      return false;
+    }
+    if (/\/create-account-enroll-passkey(?:[/?#]|$)/i.test(path)) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+
+  const pageText = [
+    document.body?.innerText,
+    document.title,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return /通行密钥|passkey/i.test(pageText)
+    && /跳过|skip/i.test(pageText)
+    && /创建账户|create account/i.test(pageText);
+}
+
+function getStep5PasskeySkipButton() {
+  const candidates = document.querySelectorAll('button, [role="button"], a, input[type="button"], input[type="submit"]');
+  return Array.from(candidates).find((el) => {
+    if (!isVisibleElement(el)) {
+      return false;
+    }
+    if (!isActionEnabled(el)) {
+      return false;
+    }
+    const text = typeof getActionText === 'function'
+      ? getActionText(el)
+      : [
+          el?.textContent,
+          el?.value,
+          el?.getAttribute?.('aria-label'),
+          el?.getAttribute?.('title'),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+    return /^(跳过|skip)$/i.test(String(text || '').trim());
+  }) || null;
+}
+
+async function recoverStep5PasskeyEnrollPage(options = {}) {
+  const timeoutMs = Math.max(1000, Number(options?.timeoutMs) || 12000);
+  const start = Date.now();
+  const performOperationWithDelay = typeof getOperationDelayRunner === 'function'
+    ? getOperationDelayRunner()
+    : async (_metadata, operation) => operation();
+  let passkeySkipButton = null;
+
+  while (Date.now() - start < timeoutMs) {
+    if (!isStep5PasskeyEnrollPage()) {
+      return {
+        skipped: false,
+        pageVisible: false,
+        url: location.href,
+      };
+    }
+    passkeySkipButton = getStep5PasskeySkipButton();
+    if (passkeySkipButton) {
+      break;
+    }
+    await sleep(150);
+  }
+
+  if (!isStep5PasskeyEnrollPage()) {
+    return {
+      skipped: false,
+      pageVisible: false,
+      url: location.href,
+    };
+  }
+
+  if (!passkeySkipButton) {
+    throw new Error(`步骤 5：检测到通行密钥引导页，但未找到“跳过”按钮。URL: ${location.href}`);
+  }
+
+  log('步骤 5：检测到通行密钥引导页，正在点击“跳过”继续后续流程...', 'warn', {
+    step: 5,
+    stepKey: 'fill-profile',
+  });
+  await humanPause(350, 900);
+  await performOperationWithDelay({ stepKey: 'fill-profile', kind: 'click', label: 'skip-passkey-enroll' }, async () => {
+    simulateClick(passkeySkipButton);
+  });
+  await sleep(1000);
+
+  return {
+    skipped: true,
+    pageVisible: isStep5PasskeyEnrollPage(),
+    url: location.href,
+  };
+}
+
 function getStep5SubmitButton() {
   const direct = document.querySelector('button[type="submit"], input[type="submit"]');
   if (direct && isVisibleElement(direct)) {
@@ -7291,6 +7434,7 @@ function getStep5PostSubmitSuccessState() {
 function getStep5SubmitState() {
   const retryState = getStep5AuthRetryPageState();
   const successState = getStep5PostSubmitSuccessState();
+  const passkeyEnrollVisible = isStep5PasskeyEnrollPage();
   const errorText = typeof getStep5ErrorText === 'function' ? getStep5ErrorText() : '';
   let signupAuthHost = false;
   try {
@@ -7308,12 +7452,14 @@ function getStep5SubmitState() {
     maxCheckAttemptsBlocked: Boolean(retryState?.maxCheckAttemptsBlocked),
     userAlreadyExistsBlocked: Boolean(retryState?.userAlreadyExistsBlocked),
     successState: successState?.state || '',
+    passkeyEnrollVisible,
     profileVisible: isStep5ProfileStillVisible(),
     errorText,
     unknownAuthPage: Boolean(
       signupAuthHost
       && !retryState
       && !successState
+      && !passkeyEnrollVisible
       && !isStep5ProfileStillVisible()
     ),
   };
@@ -7328,6 +7474,7 @@ function logStep5SubmitDebug(message, options = {}) {
     `retryPage=${Boolean(resolvedState?.retryPage)}`,
     `retryEnabled=${Boolean(resolvedState?.retryEnabled)}`,
     `successState=${resolvedState?.successState || 'none'}`,
+    `passkeyEnrollVisible=${Boolean(resolvedState?.passkeyEnrollVisible)}`,
     `profileVisible=${Boolean(resolvedState?.profileVisible)}`,
     `unknownAuthPage=${Boolean(resolvedState?.unknownAuthPage)}`,
     `maxCheckAttemptsBlocked=${Boolean(resolvedState?.maxCheckAttemptsBlocked)}`,
@@ -7470,6 +7617,17 @@ async function waitForStep5SubmitOutcome(options = {}) {
       return successState;
     }
 
+    if (isStep5PasskeyEnrollPage()) {
+      const passkeyRecoveryResult = await recoverStep5PasskeyEnrollPage({
+        timeoutMs: 12000,
+      });
+      debugLog(`检测到资料提交后的通行密钥引导页，已尝试点击“跳过” | skipped=${Boolean(passkeyRecoveryResult?.skipped)} | pageVisible=${Boolean(passkeyRecoveryResult?.pageVisible)}`, {
+        level: passkeyRecoveryResult?.skipped ? 'warn' : 'info',
+      });
+      lastSubmitClickAt = Date.now();
+      continue;
+    }
+
     const step5Error = typeof getStep5ErrorText === 'function' ? getStep5ErrorText() : '';
     if (step5Error) {
       lastStep5Error = step5Error;
@@ -7509,6 +7667,10 @@ async function waitForStep5SubmitOutcome(options = {}) {
   const finalSuccessState = getStep5PostSubmitSuccessState();
   if (finalSuccessState) {
     return finalSuccessState;
+  }
+
+  if (isStep5PasskeyEnrollPage()) {
+    throw new Error(`步骤 5：资料提交后停留在通行密钥引导页，未能自动跳过。URL: ${location.href}`);
   }
 
   const finalStep5Error = (typeof getStep5ErrorText === 'function' ? getStep5ErrorText() : '') || lastStep5Error;

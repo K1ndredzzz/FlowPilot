@@ -337,7 +337,7 @@ flows/<flowId>/
 4. sidepanel 渲染仍可以展示“第几项”的用户文案，但状态合并、按钮执行、跳过、恢复都以 `nodeId` 为主键。
 5. 邮件规则、source registry、driver command 已跟 node 对齐；验证码节点通过 `mailRuleId` 绑定，而不是通过固定步骤号绑定。
 6. 自动运行主循环使用 `runAutoSequenceFromNodeGraph(startNodeId)` 按当前 workflow 的 node 列表推进，不再通过数字序号、`step++` 或 `runAutoSequenceFromNodeOrder` 驱动。
-7. 自动运行恢复、idle 重开、Plus/GPC/GoPay checkout 重建都以目标 `nodeId` 和实际前置节点为锚点；遇到稀疏节点图时不会再依赖不存在的虚拟数字步骤。
+7. 自动运行恢复、idle 重开、Plus/GPC checkout 重建都以目标 `nodeId` 和实际前置节点为锚点；遇到稀疏节点图时不会再依赖不存在的虚拟数字步骤。
 
 阶段 8 自检命令要求核心生产路径不得再命中旧协议和旧状态字段：
 

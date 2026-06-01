@@ -1273,6 +1273,7 @@ function updateIpProxyUI(state = latestState) {
     rowIpProxyEnabled.style.display = '';
   }
   if (btnToggleIpProxySection) {
+    btnToggleIpProxySection.style.display = enabled ? '' : 'none';
     btnToggleIpProxySection.disabled = !enabled;
     btnToggleIpProxySection.textContent = showSettings ? '收起设置' : '展开设置';
     btnToggleIpProxySection.title = enabled

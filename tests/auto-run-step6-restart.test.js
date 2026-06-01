@@ -191,6 +191,10 @@ const PHONE_IDENTITY_STATE_KEYS = [
   'accountIdentifier',
 ];
 
+function deepClone(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
 function createDownstreamResetHarness(stepKey = '') {
   return new Function(`
 function getStepExecutionKeyForState() {
@@ -267,12 +271,19 @@ const AUTO_RUN_STEP_IDLE_LOG_TIMEOUT_MS = ${JSON.stringify(idleLogTimeoutMs)};
 const AUTO_RUN_STEP_IDLE_LOG_CHECK_INTERVAL_MS = ${JSON.stringify(idleLogCheckIntervalMs)};
 const AUTO_RUN_STEP_IDLE_RESTART_MAX_ATTEMPTS = 3;
 const AUTO_RUN_STEP_IDLE_RESTART_ERROR_PREFIX = 'AUTO_RUN_STEP_IDLE_RESTART::';
+const AUTO_RUN_TIMER_PARKED_ERROR_PREFIX = 'AUTO_RUN_TIMER_PARKED::';
+const AUTO_RUN_TIMER_KIND_BEFORE_RETRY = 'before_retry';
+const GPC_CHECKOUT_RESTART_COOLDOWN_TRIGGER_COUNT = 3;
+const GPC_CHECKOUT_RESTART_COOLDOWN_MS = 5 * 60 * 1000;
 const LOG_PREFIX = '[test]';
 const chrome = {
   tabs: {
     update: async () => {},
   },
 };
+function deepClone(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
 
 let remainingFailures = ${JSON.stringify(failureBudget)};
 let remainingHangs = ${JSON.stringify(hangBudget)};
@@ -283,6 +294,7 @@ const events = {
   stateUpdates: [],
   cancellations: [],
   stopBroadcasts: 0,
+  timerPlans: [],
 };
 
 async function addLog(message, level = 'info') {
@@ -292,13 +304,25 @@ async function addLog(message, level = 'info') {
 async function ensureAutoEmailReady() {}
 async function ensureResolvedSignupMethodForRun() { return 'email'; }
 async function broadcastAutoRunStatus() {}
+let currentState = {
+  stepStatuses: { 3: 'completed' },
+  mailProvider: '163',
+  logs: events.logs,
+  ...${JSON.stringify(customState)},
+};
 async function getState() {
   return {
-    stepStatuses: { 3: 'completed' },
-    mailProvider: '163',
+    ...deepClone(currentState),
     logs: events.logs,
-    ...${JSON.stringify(customState)},
   };
+}
+async function setState(updates = {}) {
+  currentState = {
+    ...currentState,
+    ...deepClone(updates),
+    logs: events.logs,
+  };
+  events.stateUpdates.push(deepClone(updates));
 }
 function getStepIdsForState() {
   return ${JSON.stringify(stepIds)};
@@ -334,7 +358,7 @@ async function invalidateDownstreamAfterStepRestart(step, options = {}) {
   events.invalidations.push({ step, options });
   const resets = getDownstreamStateResets(step, await getState());
   if (Object.keys(resets).length > 0) {
-    events.stateUpdates.push(resets);
+    await setState(resets);
   }
 }
 function cancelPendingCommands(reason = '') {
@@ -342,6 +366,10 @@ function cancelPendingCommands(reason = '') {
 }
 async function broadcastStopToContentScripts() {
   events.stopBroadcasts += 1;
+}
+async function persistAutoRunTimerPlan(plan, extraState = {}) {
+  events.timerPlans.push({ plan, extraState });
+  return plan;
 }
 function getLoginAuthStateLabel(state) {
   return state || 'unknown';
@@ -352,6 +380,13 @@ function getErrorMessage(error) {
 function normalizePlusPaymentMethod(value = '') {
   const normalized = String(value || '').trim().toLowerCase();
   return normalized === PLUS_PAYMENT_METHOD_GPC_HELPER ? PLUS_PAYMENT_METHOD_GPC_HELPER : normalized;
+}
+function buildAutoRunTimerParkedError(message = '') {
+  return new Error(AUTO_RUN_TIMER_PARKED_ERROR_PREFIX + String(message || '').trim());
+}
+function isAutoRunTimerParkedError(error) {
+  const message = String(typeof error === 'string' ? error : error?.message || '');
+  return message.startsWith(AUTO_RUN_TIMER_PARKED_ERROR_PREFIX);
 }
 function isPhoneSmsPlatformRateLimitFailure(error) {
   const message = getErrorMessage(error);
@@ -380,6 +415,40 @@ return {
         totalRuns: 1,
         attemptRuns: 1,
         continued: false,
+      });
+      return null;
+    } catch (error) {
+      return { error, events };
+    }
+  },
+  getEvents() {
+    return events;
+  },
+  async setState(updates = {}) {
+    await setState(updates);
+    return getState();
+  },
+  async getState() {
+    return getState();
+  },
+  async runWithContext(context = {}) {
+    await runAutoSequenceFromStep(${JSON.stringify(startStep)}, {
+      targetRun: 1,
+      totalRuns: 1,
+      attemptRuns: 1,
+      continued: false,
+      ...context,
+    });
+    return events;
+  },
+  async runWithContextAndCaptureError(context = {}) {
+    try {
+      await runAutoSequenceFromStep(${JSON.stringify(startStep)}, {
+        targetRun: 1,
+        totalRuns: 1,
+        attemptRuns: 1,
+        continued: false,
+        ...context,
       });
       return null;
     } catch (error) {
@@ -848,7 +917,7 @@ test('auto-run treats GPC account binding as recoverable step 6 restart', async 
     startStep: 6,
     failureStep: 7,
     failureBudget: 1,
-    failureMessage: 'GPC_PAGE_FLOW_ENDED::GOPAY已经绑了订阅，需要手动解绑',
+    failureMessage: 'GPC_PAGE_FLOW_ENDED::账号已经绑定订阅，需要手动解绑',
     stepDefinitions: plusGpcSteps,
     finalOAuthChainStartStep: 10,
     customState: {
@@ -862,6 +931,36 @@ test('auto-run treats GPC account binding as recoverable step 6 restart', async 
 
   assert.deepStrictEqual(events.steps, [6, 7, 6, 7, 10, 11, 12, 13]);
   assert.deepStrictEqual(events.invalidations.map((entry) => entry.step), [5]);
+});
+
+test('auto-run restarts GPC checkout from step 6 when page reports task execution error', async () => {
+  const plusGpcSteps = {
+    6: { key: 'plus-checkout-create' },
+    7: { key: 'plus-checkout-billing' },
+    10: { key: 'oauth-login' },
+    11: { key: 'fetch-login-code' },
+    12: { key: 'confirm-oauth' },
+    13: { key: 'platform-verify' },
+  };
+  const harness = createHarness({
+    startStep: 6,
+    failureStep: 7,
+    failureBudget: 1,
+    failureMessage: 'GPC_PAGE_FLOW_ENDED::步骤 7：GPC 页面任务执行错误，准备重新回到步骤 6 创建新 Checkout。最近日志：[03:25:57] ERROR 任务失败：执行错误',
+    stepDefinitions: plusGpcSteps,
+    finalOAuthChainStartStep: 10,
+    customState: {
+      stepStatuses: { 3: 'completed' },
+      plusPaymentMethod: 'gpc-helper',
+      plusCheckoutSource: 'gpc-helper',
+    },
+  });
+
+  const events = await harness.run();
+
+  assert.deepStrictEqual(events.steps, [6, 7, 6, 7, 10, 11, 12, 13]);
+  assert.deepStrictEqual(events.invalidations.map((entry) => entry.step), [5]);
+  assert.ok(events.logs.some(({ message }) => /回到节点 plus-checkout-create 重新准备 GPC 页面/.test(message)));
 });
 
 test('auto-run restarts GPC checkout from step 6 when ChatGPT session cannot be read', async () => {
@@ -924,7 +1023,7 @@ test('auto-run restarts GPC checkout from step 6 when page returns without compl
   assert.ok(events.logs.some(({ message }) => /回到节点 plus-checkout-create 重新准备 GPC 页面/.test(message)));
 });
 
-test('auto-run keeps rebuilding GPC checkout beyond three failures', async () => {
+test('auto-run parks GPC checkout rebuild loop on the third consecutive failure', async () => {
   const plusGpcSteps = {
     6: { key: 'plus-checkout-create' },
     7: { key: 'plus-checkout-billing' },
@@ -947,14 +1046,91 @@ test('auto-run keeps rebuilding GPC checkout beyond three failures', async () =>
     },
   });
 
-  const events = await harness.run();
+  const result = await harness.runAndCaptureError();
 
-  assert.deepStrictEqual(
-    events.steps,
-    [6, 7, 6, 7, 6, 7, 6, 7, 6, 7, 10, 11, 12, 13]
-  );
-  assert.deepStrictEqual(events.invalidations.map((entry) => entry.step), [5, 5, 5, 5]);
-  assert.ok(events.logs.some(({ message }) => /第 4 次/.test(message)));
+  assert.ok(result?.error);
+  assert.match(result.error.message, /AUTO_RUN_TIMER_PARKED::/);
+  assert.deepStrictEqual(result.events.steps, [6, 7, 6, 7, 6, 7]);
+  assert.deepStrictEqual(result.events.invalidations.map((entry) => entry.step), [5, 5, 5]);
+  assert.equal(result.events.timerPlans.length, 1);
+  assert.equal(result.events.timerPlans[0].plan.kind, 'before_retry');
+  assert.equal(result.events.timerPlans[0].plan.mode, 'continue');
+});
+
+test('auto-run parks current attempt for five minutes after every third GPC checkout rebuild', async () => {
+  const plusGpcSteps = {
+    6: { key: 'plus-checkout-create' },
+    7: { key: 'plus-checkout-billing' },
+    10: { key: 'oauth-login' },
+    11: { key: 'fetch-login-code' },
+    12: { key: 'confirm-oauth' },
+    13: { key: 'platform-verify' },
+  };
+  const harness = createHarness({
+    startStep: 6,
+    failureStep: 7,
+    failureBudget: 3,
+    failureMessage: 'GPC_PAGE_FLOW_ENDED::步骤 7：GPC 页面等待超时，未检测到订阅完成。',
+    stepDefinitions: plusGpcSteps,
+    finalOAuthChainStartStep: 10,
+    customState: {
+      stepStatuses: { 3: 'completed' },
+      plusPaymentMethod: 'gpc-helper',
+      plusCheckoutSource: 'gpc-helper',
+      autoRunSkipFailures: true,
+      autoRunRoundSummaries: [],
+    },
+  });
+
+  const result = await harness.runAndCaptureError();
+
+  assert.ok(result?.error);
+  assert.match(result.error.message, /AUTO_RUN_TIMER_PARKED::/);
+  const events = result.events;
+  assert.deepStrictEqual(events.steps, [6, 7, 6, 7, 6, 7]);
+  assert.deepStrictEqual(events.invalidations.map((entry) => entry.step), [5, 5, 5]);
+  assert.equal(events.timerPlans.length, 1);
+  assert.equal(events.timerPlans[0].plan.kind, 'before_retry');
+  assert.equal(events.timerPlans[0].plan.mode, 'continue');
+  assert.ok(/5 分钟后继续/.test(events.timerPlans[0].plan.countdownNote));
+  assert.ok(events.logs.some(({ message }) => /已进入 5 分钟冷却/.test(message)));
+});
+
+test('auto-run preserves GPC checkout rebuild count across continue resume before triggering cooldown', async () => {
+  const plusGpcSteps = {
+    6: { key: 'plus-checkout-create' },
+    7: { key: 'plus-checkout-billing' },
+    10: { key: 'oauth-login' },
+    11: { key: 'fetch-login-code' },
+    12: { key: 'confirm-oauth' },
+    13: { key: 'platform-verify' },
+  };
+  const harness = createHarness({
+    startStep: 6,
+    failureStep: 7,
+    failureBudget: 3,
+    failureMessage: 'GPC_PAGE_FLOW_ENDED::步骤 7：GPC 页面任务执行错误，准备重新回到步骤 6 创建新 Checkout。最近日志：[03:25:57] ERROR 任务失败：执行错误',
+    stepDefinitions: plusGpcSteps,
+    finalOAuthChainStartStep: 10,
+    customState: {
+      stepStatuses: { 3: 'completed' },
+      plusPaymentMethod: 'gpc-helper',
+      plusCheckoutSource: 'gpc-helper',
+      autoRunSkipFailures: true,
+      autoRunRoundSummaries: [],
+      autoRunGpcCheckoutRestartCount: 2,
+    },
+  });
+
+  const result = await harness.runWithContextAndCaptureError({
+    continued: true,
+    attemptRuns: 1,
+  });
+  assert.ok(result?.error);
+  assert.match(result.error.message, /AUTO_RUN_TIMER_PARKED::/);
+  assert.equal(result.events.timerPlans.length, 1);
+  assert.equal(result.events.timerPlans[0].plan.kind, 'before_retry');
+  assert.equal((await harness.getState()).autoRunGpcCheckoutRestartCount, 3);
 });
 
 test('auto-run does not restart GPC checkout when Plus account has no free-trial eligibility', async () => {
@@ -995,6 +1171,34 @@ test('auto-run does not restart GPC checkout when account already has a ChatGPT 
     failureStep: 7,
     failureBudget: 1,
     failureMessage: 'GPC_PAGE_FLOW_ENDED::该账号已经开通过ChatGPT订阅套餐，不能重复订阅。（checkout_order）',
+    stepDefinitions: plusGpcSteps,
+    finalOAuthChainStartStep: 10,
+    customState: {
+      stepStatuses: { 3: 'completed' },
+      plusPaymentMethod: 'gpc-helper',
+      plusCheckoutSource: 'gpc-helper',
+    },
+  });
+
+  const result = await harness.runAndCaptureError();
+
+  assert.ok(result?.error);
+  assert.deepStrictEqual(result.events.steps, [6, 7]);
+  assert.equal(result.events.invalidations.length, 0);
+  assert.ok(!result.events.logs.some(({ message }) => /回到节点 plus-checkout-create 重新准备 GPC 页面/.test(message)));
+});
+
+test('auto-run does not restart GPC checkout when page-ended error contains Plus trial-ineligible token guidance', async () => {
+  const plusGpcSteps = {
+    6: { key: 'plus-checkout-create' },
+    7: { key: 'plus-checkout-billing' },
+    10: { key: 'oauth-login' },
+  };
+  const harness = createHarness({
+    startStep: 6,
+    failureStep: 7,
+    failureBudget: 1,
+    failureMessage: 'GPC_PAGE_FLOW_ENDED::步骤 7：GPC 页面已尝试启动 10 次仍未显示订阅完成。最近日志：[13:44:04] ERROR 任务失败：该账号不具备 Plus 试用资格，请更换有试用资格的账号 Token。。',
     stepDefinitions: plusGpcSteps,
     finalOAuthChainStartStep: 10,
     customState: {

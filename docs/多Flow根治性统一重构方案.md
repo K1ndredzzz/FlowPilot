@@ -921,7 +921,6 @@ panel-<target>
 - `openai-entry`
 - `openai-checkout`
 - `openai-paypal`
-- `openai-gopay`
 - `kiro-register`
 - `kiro-desktop-authorize`
 - `panel-sub2api`
@@ -946,7 +945,6 @@ flows/<flow-id>/steps/<step-role>.js
 - `flows/openai/content/openai-auth.js` -> `flows/openai/content/openai-auth.js`
 - `flows/openai/content/plus-checkout.js` -> `flows/openai/content/checkout-page.js`
 - `flows/openai/content/paypal-flow.js` -> `flows/openai/content/paypal-page.js`
-- `flows/openai/content/gopay-flow.js` -> `flows/openai/content/gopay-page.js`
 - `flows/openai/content/sub2api-panel.js` -> `flows/openai/content/sub2api-panel-page.js`
 - `flows/openai/content/vps-panel.js` -> `flows/openai/content/cpa-panel-page.js`
 

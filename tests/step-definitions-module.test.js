@@ -30,7 +30,7 @@ test('step definitions module exposes ordered normal and Plus step metadata', ()
     signupMethod: 'phone',
     phoneSignupReloginAfterBindEmailEnabled: true,
   });
-  const goPaySteps = api.getSteps({ plusModeEnabled: true, plusPaymentMethod: 'gopay' });
+  const legacyPaymentSteps = api.getSteps({ plusModeEnabled: true, plusPaymentMethod: 'gopay' });
   const gpcSteps = api.getSteps({ plusModeEnabled: true, plusPaymentMethod: 'gpc-helper' });
   const kiroSteps = api.getSteps({ activeFlowId: 'kiro' });
   const grokSteps = api.getSteps({ activeFlowId: 'grok' });
@@ -162,9 +162,12 @@ test('step definitions module exposes ordered normal and Plus step metadata', ()
       'platform-verify',
     ]
   );
-  assert.equal(goPaySteps.some((step) => step.key === 'paypal-approve'), false);
-  assert.equal(api.getStepById(9, { plusModeEnabled: true, plusPaymentMethod: 'gopay' })?.key, 'oauth-login');
-  assert.equal(api.getPlusPaymentStepTitle({ plusModeEnabled: true, plusPaymentMethod: 'gopay' }), '');
+  assert.deepStrictEqual(legacyPaymentSteps.map((step) => step.key), plusSteps.map((step) => step.key));
+  assert.equal(api.getStepById(9, { plusModeEnabled: true, plusPaymentMethod: 'gopay' })?.key, 'paypal-approve');
+  assert.equal(
+    api.getPlusPaymentStepTitle({ plusModeEnabled: true, plusPaymentMethod: 'gopay' }),
+    api.getPlusPaymentStepTitle({ plusModeEnabled: true, plusPaymentMethod: 'paypal' })
+  );
   assert.deepStrictEqual(api.getStepIds({ plusModeEnabled: true }), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
   assert.equal(api.getLastStepId({ plusModeEnabled: true }), 15);
   assert.deepStrictEqual(api.getStepIds({ plusModeEnabled: true, signupMethod: 'phone' }), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
@@ -286,28 +289,15 @@ test('step definitions module exposes ordered normal and Plus step metadata', ()
   assert.deepStrictEqual(api.getStepIds({ plusModeEnabled: true, plusPaymentMethod: 'paypal-hosted' }), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
   assert.equal(api.getLastStepId({ plusModeEnabled: true, plusPaymentMethod: 'paypal-hosted' }), 15);
 
+  assert.deepStrictEqual(legacyPaymentSteps, plusSteps);
   assert.deepStrictEqual(
-    goPaySteps.map((step) => step.key),
-    [
-      'open-chatgpt',
-      'submit-signup-email',
-      'fill-password',
-      'fetch-signup-code',
-      'fill-profile',
-      'wait-registration-success',
-      'plus-checkout-create',
-      'gopay-subscription-confirm',
-      'oauth-login',
-      'fetch-login-code',
-      'post-login-phone-verification',
-      'confirm-oauth',
-      'platform-verify',
-    ]
+    api.getStepIds({ plusModeEnabled: true, plusPaymentMethod: 'gopay' }),
+    api.getStepIds({ plusModeEnabled: true, plusPaymentMethod: 'paypal' })
   );
-  assert.deepStrictEqual(api.getStepIds({ plusModeEnabled: true, plusPaymentMethod: 'gopay' }), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
-  assert.equal(api.getLastStepId({ plusModeEnabled: true, plusPaymentMethod: 'gopay' }), 13);
-  assert.equal(goPaySteps[6].title, '打开 GoPay 订阅页');
-  assert.equal(goPaySteps[7].title, '等待 GoPay 订阅确认');
+  assert.equal(
+    api.getLastStepId({ plusModeEnabled: true, plusPaymentMethod: 'gopay' }),
+    api.getLastStepId({ plusModeEnabled: true, plusPaymentMethod: 'paypal' })
+  );
 
   assert.deepStrictEqual(
     gpcSteps.map((step) => step.key),
@@ -345,7 +335,6 @@ test('Plus no-payment mode removes only payment chain nodes', () => {
     'paypal-hosted-card',
     'paypal-hosted-create-account',
     'paypal-hosted-review',
-    'gopay-subscription-confirm',
   ];
 
   const oauthSteps = api.getSteps({ plusModeEnabled: true, plusPaymentMethod: 'none' });
@@ -450,7 +439,7 @@ test('OpenAI OAuth workflow removes post-login phone verification when phone ver
   [
     { label: 'normal', options: { phoneVerificationEnabled: false } },
     { label: 'plus paypal', options: { plusModeEnabled: true, phoneVerificationEnabled: false } },
-    { label: 'plus gopay', options: { plusModeEnabled: true, plusPaymentMethod: 'gopay', phoneVerificationEnabled: false } },
+    { label: 'plus legacy gopay', options: { plusModeEnabled: true, plusPaymentMethod: 'gopay', phoneVerificationEnabled: false } },
     { label: 'phone relogin', options: { signupMethod: 'phone', phoneSignupReloginAfterBindEmailEnabled: true, phoneVerificationEnabled: false } },
   ].forEach(({ label, options }) => {
     const steps = api.getSteps(options);
@@ -469,6 +458,63 @@ test('OpenAI OAuth workflow removes post-login phone verification when phone ver
       `${label} fetch-login-code should link to the next non-phone node`
     );
   });
+});
+
+test('OpenAI webchat upload is appended only for webchat target', () => {
+  const globalScope = {};
+  const api = new Function('self', `${readStepDefinitionsBundle()}; return self.MultiPageStepDefinitions;`)(globalScope);
+
+  const normalKeys = api.getSteps({ targetId: 'cpa' }).map((step) => step.key);
+  assert.equal(normalKeys.includes('openai-upload-session-to-webchat'), false);
+
+  const webchatSteps = api.getSteps({ targetId: 'webchat' });
+  const webchatNodes = api.getNodes({ targetId: 'webchat' });
+  const webchatKeys = webchatSteps.map((step) => step.key);
+  assert.deepStrictEqual(webchatKeys, [
+    'open-chatgpt',
+    'submit-signup-email',
+    'fill-password',
+    'fetch-signup-code',
+    'fill-profile',
+    'wait-registration-success',
+    'openai-upload-session-to-webchat',
+  ]);
+  assert.equal(webchatSteps.at(-1)?.key, 'openai-upload-session-to-webchat');
+  assert.equal(webchatSteps.at(-1)?.sourceId, 'openai-webchat');
+  assert.equal(webchatSteps.at(-1)?.driverId, 'flows/openai/background/publisher-webchat');
+  [
+    'oauth-login',
+    'fetch-login-code',
+    'post-login-phone-verification',
+    'confirm-oauth',
+    'platform-verify',
+  ].forEach((key) => {
+    assert.equal(webchatKeys.includes(key), false);
+    assert.equal(webchatNodes.some((node) => node.nodeId === key), false);
+  });
+  assert.deepStrictEqual(
+    webchatNodes.find((node) => node.nodeId === 'wait-registration-success')?.next,
+    ['openai-upload-session-to-webchat']
+  );
+  assert.deepStrictEqual(webchatNodes.at(-1)?.next, []);
+
+  const cpaSyncSteps = api.getSteps({
+    targetId: 'cpa',
+    openaiWebchatUploadEnabled: true,
+  });
+  assert.equal(cpaSyncSteps.some((step) => step.key === 'openai-upload-session-to-webchat'), false);
+
+  const schemaSyncSteps = api.getSteps({
+    targetId: 'sub2api',
+    settingsState: {
+      flows: {
+        openai: {
+          webchatUpload: { enabled: true },
+        },
+      },
+    },
+  });
+  assert.equal(schemaSyncSteps.some((step) => step.key === 'openai-upload-session-to-webchat'), false);
 });
 
 test('Plus session strategy swaps the OAuth tail for a single SUB2API import node', () => {
@@ -502,16 +548,6 @@ test('Plus session strategy swaps the OAuth tail for a single SUB2API import nod
       },
       previousNodeId: 'paypal-hosted-review',
       expectedStepIds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-    },
-    {
-      label: 'gopay',
-      options: {
-        plusModeEnabled: true,
-        plusPaymentMethod: 'gopay',
-        plusAccountAccessStrategy: 'sub2api_codex_session',
-      },
-      previousNodeId: 'gopay-subscription-confirm',
-      expectedStepIds: [1, 2, 3, 4, 5, 6, 7, 8, 9],
     },
     {
       label: 'gpc-helper',
@@ -595,16 +631,6 @@ test('Plus session strategy swaps the OAuth tail for a single CPA import node', 
       expectedStepIds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
     },
     {
-      label: 'gopay',
-      options: {
-        plusModeEnabled: true,
-        plusPaymentMethod: 'gopay',
-        plusAccountAccessStrategy: 'cpa_codex_session',
-      },
-      previousNodeId: 'gopay-subscription-confirm',
-      expectedStepIds: [1, 2, 3, 4, 5, 6, 7, 8, 9],
-    },
-    {
       label: 'gpc-helper',
       options: {
         plusModeEnabled: true,
@@ -647,21 +673,17 @@ test('sidepanel html loads shared step definitions before sidepanel bootstrap', 
   assert.ok(definitionsIndex < sidepanelIndex);
 });
 
-test('sidepanel html exposes Plus mode, PayPal, and GoPay settings', () => {
+test('sidepanel html exposes Plus mode, PayPal, no-payment, and GPC settings', () => {
   const html = fs.readFileSync('sidepanel/sidepanel.html', 'utf8');
   const visibleHtml = stripHtmlComments(html);
   const plusPaymentSelect = getSelectMarkup(visibleHtml, 'select-plus-payment-method');
   assert.match(html, /id="input-plus-mode-enabled"/);
   assert.match(html, /id="select-plus-payment-method"/);
-  assert.match(plusPaymentSelect, /<option value="gpc-helper">GPC<\/option>/);
-  assert.doesNotMatch(plusPaymentSelect, /<option value="gopay">GoPay<\/option>/);
+  assert.match(plusPaymentSelect, /<option value="gpc-helper" selected>GPC<\/option>/);
   assert.match(html, /<option value="none">无需支付<\/option>/);
   assert.match(html, /id="select-paypal-account"/);
   assert.match(html, /id="btn-add-paypal-account"/);
-  assert.match(html, /id="input-gopay-phone"/);
-  assert.match(html, /id="input-gopay-otp"/);
-  assert.match(html, /id="input-gopay-pin"/);
-  assert.match(html, /<option value="gpc-helper">GPC<\/option>/);
+  assert.match(html, /<option value="gpc-helper" selected>GPC<\/option>/);
   assert.match(html, /id="btn-gpc-card-key-purchase"/);
   assert.match(html, /id="btn-gpc-card-key-query"/);
   assert.match(html, />购买卡密</);

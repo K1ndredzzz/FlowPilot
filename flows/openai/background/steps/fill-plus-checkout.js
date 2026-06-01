@@ -8,7 +8,6 @@
   const PLUS_CHECKOUT_SUBMIT_MAX_ATTEMPTS = 5;
   const PLUS_CHECKOUT_PAYPAL_REDIRECT_TIMEOUT_MS = 10000;
   const PLUS_PAYMENT_METHOD_PAYPAL = 'paypal';
-  const PLUS_PAYMENT_METHOD_GOPAY = 'gopay';
   const PLUS_PAYMENT_METHOD_GPC_HELPER = 'gpc-helper';
   const GPC_PORTAL_URL = 'https://gpc.qlhazycoder.top/';
   const GPC_PAGE_POLL_INTERVAL_MS = 3000;
@@ -20,12 +19,6 @@
       label: 'PayPal',
       selectMessageType: 'PLUS_CHECKOUT_SELECT_PAYPAL',
       redirectPattern: /paypal\./i,
-    },
-    [PLUS_PAYMENT_METHOD_GOPAY]: {
-      id: PLUS_PAYMENT_METHOD_GOPAY,
-      label: 'GoPay',
-      selectMessageType: 'PLUS_CHECKOUT_SELECT_GOPAY',
-      redirectPattern: /gopay|gojek|midtrans|xendit|stripe|checkout/i,
     },
   };
   const MEIGUODIZHI_ADDRESS_ENDPOINT = 'https://www.meiguodizhi.com/api/v1/dz';
@@ -117,14 +110,14 @@
 
     function normalizePlusPaymentMethod(value = '') {
       const rootScope = typeof self !== 'undefined' ? self : globalThis;
-      if (rootScope.GoPayUtils?.normalizePlusPaymentMethod) {
-        return rootScope.GoPayUtils.normalizePlusPaymentMethod(value);
+      if (rootScope.GpcUtils?.normalizePlusPaymentMethod) {
+        return rootScope.GpcUtils.normalizePlusPaymentMethod(value);
       }
       const normalized = String(value || '').trim().toLowerCase();
       if (normalized === PLUS_PAYMENT_METHOD_GPC_HELPER) {
         return PLUS_PAYMENT_METHOD_GPC_HELPER;
       }
-      return normalized === PLUS_PAYMENT_METHOD_GOPAY ? PLUS_PAYMENT_METHOD_GOPAY : PLUS_PAYMENT_METHOD_PAYPAL;
+      return PLUS_PAYMENT_METHOD_PAYPAL;
     }
 
     function getPaymentMethodConfig(method = PLUS_PAYMENT_METHOD_PAYPAL) {
@@ -253,7 +246,7 @@
             logText,
             lastLogLine,
             hasSubscriptionDone: /订阅完成/.test(logText) || /订阅完成/.test(bodyText),
-            noTrial: /该账户没有试用资格|该账号没有试用资格|没有试用资格/.test(logText) || /该账户没有试用资格|该账号没有试用资格|没有试用资格/.test(bodyText),
+            noTrial: /该账户没有试用资格|该账号没有试用资格|没有试用资格|不具备\s*(?:Plus\s*)?试用资格|更换有试用资格的账号\s*Token/.test(logText) || /该账户没有试用资格|该账号没有试用资格|没有试用资格|不具备\s*(?:Plus\s*)?试用资格|更换有试用资格的账号\s*Token/.test(bodyText),
             startButtonText: textOf(startButton),
             startButtonDisabled: Boolean(startButton?.disabled || startButton?.getAttribute?.('aria-disabled') === 'true'),
             hasStartButton: Boolean(startButton),
@@ -298,7 +291,20 @@
         pageState.logText,
         pageState.bodyText,
       ].filter(Boolean).join(' '));
-      return /(?:该|此|当前)?账[户号].{0,12}(?:没有|无|不具备).{0,8}试用资格|(?:没有|无|不具备).{0,8}试用资格/.test(text);
+      return /(?:该|此|当前)?账[户号].{0,16}(?:没有|无|不具备).{0,12}(?:Plus\s*)?试用资格|(?:没有|无|不具备).{0,12}(?:Plus\s*)?试用资格|更换有试用资格的账号\s*Token/.test(text);
+    }
+
+    function hasGpcRecoverableExecutionFailure(pageState = {}) {
+      const text = normalizeText([
+        pageState.lastLogLine,
+        pageState.logText,
+        pageState.bodyText,
+      ].filter(Boolean).join(' '));
+      const hasExecutionError = /任务失败：执行错误|ERROR\s*任务失败：执行错误|WARN\s*\[\d+\/\d+\]\s*执行错误/.test(text);
+      if (!hasExecutionError) {
+        return false;
+      }
+      return /Checkout\s*订单创建成功|解析\s*Midtrans\s*Token|Midtrans\s*Token/i.test(text);
     }
 
     async function ensureGpcCardMode(tabId) {
@@ -456,42 +462,44 @@
       const deadline = Date.now() + getGpcPageTimeoutMs(state);
       let startAttempts = 0;
       let hasClickedStart = false;
-      let pendingStatusKey = '';
-      let pendingStatusLabel = '';
-      let pendingStatusLevel = 'info';
-      let pendingStatusCount = 0;
+      let pendingGpcLogs = [];
 
-      const flushPendingStatusLog = async () => {
-        if (!pendingStatusKey || !pendingStatusCount) {
+      const collectPendingGpcLog = (message, level = 'info', key = '') => {
+        const normalizedMessage = String(message || '').trim();
+        const normalizedKey = String(key || normalizedMessage).trim();
+        if (!normalizedMessage || !normalizedKey) {
           return;
         }
-        const countSuffix = pendingStatusCount > 1 ? ` ×${pendingStatusCount}` : '';
-        await addLog(`步骤 7：GPC 页面状态：${pendingStatusLabel}${countSuffix}`, pendingStatusLevel);
-        pendingStatusKey = '';
-        pendingStatusLabel = '';
-        pendingStatusLevel = 'info';
-        pendingStatusCount = 0;
+        const existingEntry = pendingGpcLogs.find((entry) => entry.key === normalizedKey);
+        if (existingEntry) {
+          existingEntry.count += 1;
+          return;
+        }
+        pendingGpcLogs.push({
+          key: normalizedKey,
+          message: normalizedMessage,
+          level,
+          count: 1,
+        });
+      };
+
+      const flushPendingStatusLog = async () => {
+        if (!pendingGpcLogs.length) {
+          return;
+        }
+        const entries = pendingGpcLogs;
+        pendingGpcLogs = [];
+        for (const entry of entries) {
+          const countSuffix = entry.count > 1 ? ` ×${entry.count}` : '';
+          await addLog(`${entry.message}${countSuffix}`, entry.level);
+        }
       };
 
       const collectStatusLog = async (pageState, currentButtonText) => {
         const statusLabel = `${currentButtonText || '未识别按钮'}${pageState.hasSubscriptionDone ? ' / 订阅完成' : ''}`;
-        const statusKey = [
-          currentButtonText || '',
-          pageState.hasSubscriptionDone ? 'done' : '',
-          pageState.noTrial ? 'no-trial' : '',
-          pageState.isCardModeActive ? 'card' : 'not-card',
-          pageState.startButtonDisabled ? 'disabled' : '',
-        ].join('|');
+        const statusKey = statusLabel || '未识别按钮';
         const statusLevel = pageState.hasSubscriptionDone ? 'ok' : 'info';
-        if (statusKey === pendingStatusKey) {
-          pendingStatusCount += 1;
-          return;
-        }
-        await flushPendingStatusLog();
-        pendingStatusKey = statusKey;
-        pendingStatusLabel = statusLabel;
-        pendingStatusLevel = statusLevel;
-        pendingStatusCount = 1;
+        collectPendingGpcLog(`步骤 7：GPC 页面状态：${statusLabel}`, statusLevel, `status:${statusKey}`);
       };
 
       while (Date.now() <= deadline) {
@@ -504,6 +512,11 @@
         if (pageState.noTrial) {
           await flushPendingStatusLog();
           throw new Error(`PLUS_CHECKOUT_NON_FREE_TRIAL::步骤 7：该账户没有试用资格，当前轮 GPC 充值失败。${formatGpcLastLogSuffix(pageState)}`);
+        }
+
+        if (hasGpcRecoverableExecutionFailure(pageState)) {
+          await flushPendingStatusLog();
+          throw new Error(`GPC_PAGE_FLOW_ENDED::步骤 7：GPC 页面任务执行错误，准备重新回到步骤 6 创建新 Checkout。${formatGpcLastLogSuffix(pageState)}`);
         }
 
         if (pageState.hasSubscriptionDone && /开始\s*Plus\s*充值/.test(buttonText)) {
@@ -526,27 +539,33 @@
         }
 
         if (!pageState.isCardModeActive) {
-          await flushPendingStatusLog();
           let modeResult = null;
           for (let attempt = 1; attempt <= 8; attempt += 1) {
             modeResult = await ensureGpcCardMode(tabId);
             if (!modeResult.ok) {
+              await flushPendingStatusLog();
               throw new Error('GPC_PAGE_FLOW_ENDED::步骤 7：未找到 GPC“卡密充值”模式入口，无法启动 Plus 充值。');
             }
             if (modeResult.isCardModeActive) {
               break;
             }
             if (attempt === 1 && modeResult.clicked) {
-              await addLog('步骤 7：已切换到 GPC 卡密充值模式，等待页面完成渲染。', 'info');
+              collectPendingGpcLog(
+                '步骤 7：已切换到 GPC 卡密充值模式，等待页面完成渲染。',
+                'info',
+                'mode-switch'
+              );
             }
             await sleepWithStop(modeResult.clicked ? 800 : 500);
           }
           if (!modeResult?.isCardModeActive) {
+            await flushPendingStatusLog();
             throw new Error('GPC_PAGE_FLOW_ENDED::步骤 7：GPC 页面切换到卡密充值模式超时，无法启动 Plus 充值。');
           }
-          await addLog(
+          collectPendingGpcLog(
             '步骤 7：GPC 卡密充值模式已就绪，准备启动。',
-            'info'
+            'info',
+            'mode-ready'
           );
           continue;
         }
@@ -724,18 +743,6 @@
         || ''
       );
 
-      if (normalizedPaymentMethod === PLUS_PAYMENT_METHOD_GOPAY) {
-        const countryCode = exitCountry || checkoutCountry || savedCheckoutCountry || 'ID';
-        return {
-          countryCode,
-          requestedCountry: exitCountry
-            || normalizeText(countryOverride)
-            || normalizeText(state.plusCheckoutCountry)
-            || 'ID',
-          source: exitCountry ? 'proxy_exit' : (checkoutCountry ? 'checkout_page' : (savedCheckoutCountry ? 'checkout_state' : 'gopay_fallback')),
-        };
-      }
-
       const countryCode = checkoutCountry || savedCheckoutCountry || exitCountry || 'DE';
       return {
         countryCode,
@@ -752,9 +759,6 @@
       const countryResolution = resolveBillingAddressCountry(state, countryOverride, paymentMethod);
       const countryCode = countryResolution.countryCode;
       const requestedCountry = countryResolution.requestedCountry;
-      if (paymentMethod === PLUS_PAYMENT_METHOD_GOPAY && countryResolution.source === 'proxy_exit') {
-        await addLog(`步骤 7：GoPay 账单地址将按当前代理出口地区 ${countryCode} 填写。`, 'info');
-      }
       const localSeed = getLocalAddressSeed(countryCode);
       const lookupSeed = localSeed || buildMeiguodizhiLookupSeed(countryCode);
       if (!lookupSeed) {
@@ -943,7 +947,7 @@
         .map((item) => {
           const flags = [];
           if (item.result?.hasPayPal) flags.push('paypal');
-          if (item.result?.hasGoPay) flags.push('gopay');
+
           if (item.result?.billingFieldsVisible) flags.push('billing');
           if (item.result?.hasSubscribeButton) flags.push('subscribe');
           if (!flags.length && item.error) flags.push(item.error);
@@ -964,12 +968,6 @@
     }
 
     function pickPaymentFrame(inspections, paymentMethod = PLUS_PAYMENT_METHOD_PAYPAL) {
-      const normalizedPaymentMethod = normalizePlusPaymentMethod(paymentMethod);
-      if (normalizedPaymentMethod === PLUS_PAYMENT_METHOD_GOPAY) {
-        return inspections.find((item) => item.result?.hasGoPay || item.result?.gopayCandidates?.length)
-          || inspections.find((item) => isPaymentFrameUrl(item.frame.url))
-          || null;
-      }
       return inspections.find((item) => item.result?.hasPayPal || item.result?.paypalCandidates?.length)
         || inspections.find((item) => isPaymentFrameUrl(item.frame.url))
         || null;
@@ -1170,67 +1168,7 @@
         await addLog(`步骤 7：账单地址位于 checkout iframe（frameId=${billingFrame.frameId}），将改为在该 frame 内填写。`, 'info');
       }
 
-      let billingState = state;
-      if (paymentMethod === PLUS_PAYMENT_METHOD_GOPAY && typeof probeIpProxyExit === 'function') {
-        const staleExitRegion = normalizeText(
-          state?.ipProxyAppliedExitRegion
-          || state?.ipProxyExitRegion
-          || ''
-        );
-        try {
-          await addLog('步骤 7：GoPay 账单地址准备按代理出口填写，正在重新检测当前出口地区...', 'info');
-          const probeResult = await probeIpProxyExit({
-            state,
-            timeoutMs: 12000,
-            authRebindRetry: true,
-            detectWhenDisabled: true,
-          });
-          const routing = probeResult?.proxyRouting || {};
-          const probedExitRegion = normalizeText(routing.exitRegion || '');
-          const probedExitIp = normalizeText(routing.exitIp || '');
-          const probedExitSource = normalizeText(routing.exitSource || '');
-          const probeEndpoint = normalizeText(routing.endpoint || routing.exitEndpoint || '');
-          const probeReason = normalizeText(routing.reason || '');
-          const probeError = normalizeText(routing.exitError || routing.error || '');
-          if (probedExitRegion) {
-            billingState = {
-              ...(state || {}),
-              ipProxyAppliedExitRegion: probedExitRegion,
-              ipProxyExitRegion: probedExitRegion,
-              ipProxyAppliedExitIp: probedExitIp,
-              ipProxyAppliedExitSource: probedExitSource,
-            };
-            const sourceSuffix = probedExitSource ? `，来源 ${probedExitSource}` : '';
-            const endpointSuffix = probeEndpoint ? `，检测地址 ${probeEndpoint}` : '';
-            await addLog(`步骤 7：当前代理出口复测结果：${probedExitRegion}${probedExitIp ? ` / ${probedExitIp}` : ''}${sourceSuffix}${endpointSuffix}。`, 'info');
-          } else {
-            billingState = {
-              ...(state || {}),
-              ipProxyAppliedExitRegion: '',
-              ipProxyExitRegion: '',
-              ipProxyAppliedExitIp: probedExitIp,
-              ipProxyAppliedExitSource: probedExitSource,
-            };
-            await addLog(
-              `步骤 7：代理出口复测没有返回国家/地区代码，已清空旧出口地区${staleExitRegion ? ` ${staleExitRegion}` : ''}，不会继续沿用旧地区。${probeReason ? `状态：${probeReason}。` : ''}${probeError ? `诊断：${probeError}` : ''}`,
-              'warn'
-            );
-          }
-        } catch (error) {
-          billingState = {
-            ...(state || {}),
-            ipProxyAppliedExitRegion: '',
-            ipProxyExitRegion: '',
-          };
-          await addLog(`步骤 7：代理出口复测失败，已清空旧出口地区${staleExitRegion ? ` ${staleExitRegion}` : ''}，不会继续沿用旧地区：${error?.message || String(error || '未知错误')}`, 'warn');
-        }
-      }
-      if (paymentMethod === PLUS_PAYMENT_METHOD_GOPAY
-        && typeof probeIpProxyExit === 'function'
-        && !resolveMeiguodizhiCountryCode(billingState?.ipProxyAppliedExitRegion || billingState?.ipProxyExitRegion || '')) {
-        throw new Error('步骤 7：GoPay 账单地址需要当前代理出口国家/地区，但本次复测没有拿到国家码；已停止填写，避免误用旧的 KR/ID 地区。请先点 IP 代理“检测出口”，确认显示 JP 后再继续。');
-      }
-      const addressSeed = await resolveBillingAddressSeed(billingState, billingFrame.countryText, { paymentMethod });
+      const addressSeed = await resolveBillingAddressSeed(state, billingFrame.countryText, { paymentMethod });
       if (!addressSeed) {
         throw new Error('步骤 7：未找到可用的本地账单地址种子。');
       }

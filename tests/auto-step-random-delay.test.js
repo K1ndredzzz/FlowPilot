@@ -45,7 +45,7 @@ const bundle = [
   'const AUTO_STEP_DELAY_MIN_ALLOWED_SECONDS = 0;',
   'const AUTO_STEP_DELAY_MAX_ALLOWED_SECONDS = 600;',
   'const PERSISTED_SETTING_DEFAULTS = { autoStepDelaySeconds: null };',
-  "const AUTO_RUN_PRE_EXECUTION_DELAYS_BY_STEP_KEY = new Map([['plus-checkout-create', 20000]]);",
+  'const AUTO_RUN_PRE_EXECUTION_DELAYS_BY_STEP_KEY = new Map();',
   'function getStepDefinitionForState(step, state = {}) { return state.definitions?.[step] || null; }',
   'function getNodeIdByStepForState(step, state = {}) { return String(getStepDefinitionForState(step, state)?.key || step || "").trim(); }',
   'function getNodeDefinitionForState(nodeId, state = {}) { return Object.values(state.definitions || {}).find((definition) => String(definition?.key || "").trim() === String(nodeId || "").trim()) || { executeKey: String(nodeId || "").trim() }; }',
@@ -137,8 +137,8 @@ assert.strictEqual(
       6: { key: 'plus-checkout-create' },
     },
   }),
-  20000,
-  'Plus checkout create should wait before step execution'
+  0,
+  'Plus checkout create should not add an extra fixed pre-execution wait'
 );
 
 assert.strictEqual(

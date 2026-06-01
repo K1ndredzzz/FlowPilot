@@ -58,7 +58,9 @@ test('step 1 cookie cleanup queries target domains and skips browsingData sweep 
     chrome: chromeApi,
     openSignupEntryTab: async (step) => {
       events.openedSteps.push(step);
+      return 101;
     },
+    waitForTabStableComplete: async (tabId) => ({ id: tabId, url: 'https://chatgpt.com/' }),
     completeNodeFromBackground: async (nodeId) => {
       events.completedNodes.push(nodeId);
     },
@@ -112,7 +114,8 @@ test('step 1 cookie cleanup skips browsingData sweep when no direct cookie is re
   const executor = api.createStep1Executor({
     addLog: async () => {},
     chrome: chromeApi,
-    openSignupEntryTab: async () => {},
+    openSignupEntryTab: async () => 202,
+    waitForTabStableComplete: async (tabId) => ({ id: tabId, url: 'https://chatgpt.com/' }),
     completeNodeFromBackground: async () => {},
   });
 
@@ -120,4 +123,100 @@ test('step 1 cookie cleanup skips browsingData sweep when no direct cookie is re
 
   assert.equal(events.removedCookies, 0);
   assert.equal(events.browsingDataCalls.length, 0);
+});
+
+test('step 1 retries after auth login landing and re-clears cookies before reopening chatgpt home', async () => {
+  const api = loadStep1Module();
+  const events = {
+    logs: [],
+    getAllCalls: [],
+    removedCookies: [],
+    openCalls: 0,
+    completedNodes: [],
+    stableWaits: [],
+  };
+
+  const chromeApi = {
+    cookies: {
+      getAllCookieStores: async () => [{ id: 'store-a' }],
+      getAll: async (query) => {
+        events.getAllCalls.push(query);
+        return [
+          { domain: '.chatgpt.com', path: '/', name: `session-${events.getAllCalls.length}`, storeId: 'store-a' },
+        ];
+      },
+      remove: async (details) => {
+        events.removedCookies.push(details);
+        return details;
+      },
+    },
+    tabs: {
+      get: async (tabId) => ({ id: tabId, url: 'https://chatgpt.com/' }),
+    },
+  };
+
+  const landingUrls = [
+    'https://chatgpt.com/auth/login',
+    'https://chatgpt.com/',
+  ];
+
+  const executor = api.createStep1Executor({
+    addLog: async (message, level = 'info') => {
+      events.logs.push({ message, level });
+    },
+    chrome: chromeApi,
+    openSignupEntryTab: async () => {
+      events.openCalls += 1;
+      return 300 + events.openCalls;
+    },
+    waitForTabStableComplete: async (tabId) => {
+      events.stableWaits.push(tabId);
+      return { id: tabId, url: landingUrls[Math.min(events.stableWaits.length - 1, landingUrls.length - 1)] };
+    },
+    completeNodeFromBackground: async (nodeId) => {
+      events.completedNodes.push(nodeId);
+    },
+  });
+
+  await executor.executeStep1();
+
+  assert.equal(events.openCalls, 2);
+  assert.equal(events.stableWaits.length, 2);
+  assert.ok(events.getAllCalls.length >= 12);
+  assert.ok(events.removedCookies.length >= 2);
+  assert.equal(events.completedNodes.length, 1);
+  assert.equal(events.logs.some((entry) => /落地到 https:\/\/chatgpt\.com\/auth\/login/.test(entry.message)), true);
+});
+
+test('step 1 fails after repeated auth login landings', async () => {
+  const api = loadStep1Module();
+  let openCalls = 0;
+  const chromeApi = {
+    cookies: {
+      getAllCookieStores: async () => [{ id: 'store-a' }],
+      getAll: async () => [{ domain: '.chatgpt.com', path: '/', name: 'session', storeId: 'store-a' }],
+      remove: async (details) => details,
+    },
+    tabs: {
+      get: async (tabId) => ({ id: tabId, url: 'https://chatgpt.com/auth/login' }),
+    },
+  };
+
+  const executor = api.createStep1Executor({
+    addLog: async () => {},
+    chrome: chromeApi,
+    openSignupEntryTab: async () => {
+      openCalls += 1;
+      return 400 + openCalls;
+    },
+    waitForTabStableComplete: async (tabId) => ({ id: tabId, url: 'https://chatgpt.com/auth/login' }),
+    completeNodeFromBackground: async () => {},
+  });
+
+  await assert.rejects(
+    () => executor.executeStep1(),
+    /落地页异常：https:\/\/chatgpt\.com\/auth\/login/
+  );
+
+  assert.equal(openCalls, 3);
 });

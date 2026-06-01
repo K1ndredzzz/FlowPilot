@@ -5,9 +5,9 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('flows/openai/background/steps/create-plus-checkout.js', 'utf8');
 const plusCheckoutSource = fs.readFileSync('flows/openai/content/plus-checkout.js', 'utf8');
-const gopayUtilsSource = fs.readFileSync('gopay-utils.js', 'utf8');
+const gpcUtilsSource = fs.readFileSync('gpc-utils.js', 'utf8');
 const globalScope = {};
-new Function('self', `${gopayUtilsSource};`)(globalScope);
+new Function('self', `${gpcUtilsSource};`)(globalScope);
 const api = new Function('self', `${source}; return self.MultiPageBackgroundPlusCheckoutCreate;`)(globalScope);
 
 function createCheckoutContentHarness() {
@@ -226,7 +226,7 @@ test('Plus checkout create does not wait 20 seconds after opening checkout page'
   assert.equal(events.some((event) => event.type === 'sleep' && event.ms === 20000), false);
 });
 
-test('GoPay plus checkout create forwards gopay payment method to the checkout content script', async () => {
+test('legacy gopay Plus checkout create uses the PayPal checkout path', async () => {
   const events = [];
   let proxyCallCount = 0;
   const executor = api.createPlusCheckoutCreateExecutor({
@@ -253,13 +253,13 @@ test('GoPay plus checkout create forwards gopay payment method to the checkout c
     waitForTabCompleteUntilStopped: async () => {},
     withCheckoutCreationProxy: async () => {
       proxyCallCount += 1;
-      throw new Error('gopay checkout should not use the checkout proxy wrapper');
+      throw new Error('legacy gopay checkout should not use the hosted checkout proxy wrapper');
     },
   });
 
   await executor.executePlusCheckoutCreate({ plusPaymentMethod: 'gopay' });
 
-  assert.deepStrictEqual(events[0]?.payload, { paymentMethod: 'gopay' });
+  assert.deepStrictEqual(events[0]?.payload, { paymentMethod: 'paypal' });
   assert.equal(proxyCallCount, 0);
 });
 

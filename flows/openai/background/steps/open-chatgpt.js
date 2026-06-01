@@ -1,6 +1,8 @@
 (function attachBackgroundStep1(root, factory) {
   root.MultiPageBackgroundStep1 = factory();
 })(typeof self !== 'undefined' ? self : globalThis, function createBackgroundStep1Module() {
+  const STEP1_EXPECTED_ENTRY_URL = 'https://chatgpt.com/';
+  const STEP1_OPEN_MAX_ATTEMPTS = 3;
   const STEP1_COOKIE_CLEAR_DOMAINS = [
     'chatgpt.com',
     'chat.openai.com',
@@ -41,6 +43,22 @@
 
   function getStep1ErrorMessage(error) {
     return error?.message || String(error || '未知错误');
+  }
+
+  function parseStep1Url(rawUrl = '') {
+    if (!rawUrl) {
+      return null;
+    }
+    try {
+      return new URL(String(rawUrl || '').trim());
+    } catch {
+      return null;
+    }
+  }
+
+  function isExpectedStep1LandingUrl(rawUrl = '') {
+    const parsed = parseStep1Url(rawUrl);
+    return Boolean(parsed && parsed.hostname === 'chatgpt.com' && parsed.pathname === '/');
   }
 
   async function collectStep1Cookies(chromeApi) {
@@ -123,6 +141,7 @@
       chrome: chromeApi = globalThis.chrome,
       completeNodeFromBackground,
       openSignupEntryTab,
+      waitForTabStableComplete = null,
     } = deps;
 
     async function clearOpenAiCookiesBeforeStep1() {
@@ -145,11 +164,54 @@
       await addLog(`步骤 1：已清理 ${removedCount} 个 ChatGPT / OpenAI cookies（耗时 ${elapsedMs}ms）。`, 'ok');
     }
 
+    async function resolveStep1LandingUrl(tabId) {
+      if (Number.isInteger(tabId) && typeof waitForTabStableComplete === 'function') {
+        const stableTab = await waitForTabStableComplete(tabId, {
+          timeoutMs: 45000,
+          retryDelayMs: 300,
+          stableMs: 1500,
+          initialDelayMs: 300,
+        }).catch(() => null);
+        if (stableTab?.url) {
+          return String(stableTab.url || '').trim();
+        }
+      }
+
+      if (Number.isInteger(tabId) && chromeApi?.tabs?.get) {
+        const currentTab = await chromeApi.tabs.get(tabId).catch(() => null);
+        return String(currentTab?.url || '').trim();
+      }
+
+      return '';
+    }
+
     async function executeStep1() {
-      await clearOpenAiCookiesBeforeStep1();
-      await addLog('步骤 1：正在打开 ChatGPT 官网...');
-      await openSignupEntryTab(1);
-      await completeNodeFromBackground('open-chatgpt', {});
+      for (let attempt = 1; attempt <= STEP1_OPEN_MAX_ATTEMPTS; attempt += 1) {
+        await clearOpenAiCookiesBeforeStep1();
+        await addLog('步骤 1：正在打开 ChatGPT 官网...');
+        const openedTab = await openSignupEntryTab(1);
+        const tabId = Number.isInteger(openedTab)
+          ? openedTab
+          : (Number.isInteger(openedTab?.tabId) ? openedTab.tabId : null);
+        const landingUrl = await resolveStep1LandingUrl(tabId);
+
+        if (!landingUrl || isExpectedStep1LandingUrl(landingUrl)) {
+          await completeNodeFromBackground('open-chatgpt', {});
+          return;
+        }
+
+        if (attempt < STEP1_OPEN_MAX_ATTEMPTS) {
+          await addLog(
+            `步骤 1：官网打开后落地到 ${landingUrl}，不是 ${STEP1_EXPECTED_ENTRY_URL}，将重新清理 cookies 后重试（第 ${attempt + 1}/${STEP1_OPEN_MAX_ATTEMPTS} 次）。`,
+            'warn'
+          );
+          continue;
+        }
+
+        throw new Error(
+          `步骤 1：打开 ChatGPT 官网后落地页异常：${landingUrl}。已连续清理 cookies 并重试 ${STEP1_OPEN_MAX_ATTEMPTS} 次，仍未进入 ${STEP1_EXPECTED_ENTRY_URL}`
+        );
+      }
     }
 
     return { executeStep1 };

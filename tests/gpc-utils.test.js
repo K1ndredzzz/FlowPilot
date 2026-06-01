@@ -2,31 +2,25 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-function loadGoPayUtils() {
-  const source = fs.readFileSync('gopay-utils.js', 'utf8');
+function loadGpcUtils() {
+  const source = fs.readFileSync('gpc-utils.js', 'utf8');
   const globalScope = {};
-  return new Function('self', `${source}; return self.GoPayUtils;`)(globalScope);
+  return new Function('self', `${source}; return self.GpcUtils;`)(globalScope);
 }
 
-test('GoPay utils normalize manual OTP input', () => {
-  const api = loadGoPayUtils();
-  assert.equal(api.normalizeGoPayOtp(' 12-34 56 '), '123456');
-  assert.equal(api.normalizeGoPayOtp('abc'), '');
-});
-
-test('GoPay utils keeps GPC payment method distinct', () => {
-  const api = loadGoPayUtils();
+test('GPC utils keeps supported Plus payment methods distinct and normalizes legacy values', () => {
+  const api = loadGpcUtils();
   assert.equal(api.normalizePlusPaymentMethod('paypal-hosted'), 'paypal-hosted');
   assert.equal(api.normalizePlusPaymentMethod('paypal_direct'), 'paypal-hosted');
   assert.equal(api.normalizePlusPaymentMethod('none'), 'none');
   assert.equal(api.normalizePlusPaymentMethod('no-payment'), 'none');
   assert.equal(api.normalizePlusPaymentMethod('gpc-helper'), 'gpc-helper');
-  assert.equal(api.normalizePlusPaymentMethod('gopay'), 'gopay');
+  assert.equal(api.normalizePlusPaymentMethod('gopay'), 'paypal');
   assert.equal(api.normalizePlusPaymentMethod('unknown'), 'paypal');
 });
 
-test('GoPay utils builds GPC card balance URLs from portal endpoints', () => {
-  const api = loadGoPayUtils();
+test('GPC utils builds card balance URLs from portal endpoints', () => {
+  const api = loadGpcUtils();
   assert.equal(api.DEFAULT_GPC_BASE_URL, 'https://gpc.qlhazycoder.top');
   assert.equal(api.normalizeGpcBaseUrl(''), 'https://gpc.qlhazycoder.top');
   assert.equal(api.normalizeGpcBaseUrl('https://example.com/api/web/card/balance'), 'https://gpc.qlhazycoder.top');
@@ -47,8 +41,8 @@ test('GoPay utils builds GPC card balance URLs from portal endpoints', () => {
   assert.equal(api.isGpcCardKeyFormat('card-key-1'), false);
 });
 
-test('GoPay utils formats balance and maps linked-account errors', () => {
-  const api = loadGoPayUtils();
+test('GPC utils formats balance and maps linked-account errors', () => {
+  const api = loadGpcUtils();
   assert.equal(
     api.formatGpcBalancePayload({ remaining_uses: 12, status: 'active', used_uses: 2, flow_id: 'flow_1' }),
     '余额 12，已用 2，状态 active，flow_id flow_1'
@@ -97,6 +91,6 @@ test('GoPay utils formats balance and maps linked-account errors', () => {
   );
   assert.equal(
     api.extractGpcResponseErrorDetail({ error_messages: ['account already linked'] }, 406),
-    'GOPAY已经绑了订阅，需要手动解绑'
+    '账号已经绑定订阅，需要手动解绑'
   );
 });

@@ -1,10 +1,9 @@
-(function attachGoPayUtils(root, factory) {
-  root.GoPayUtils = factory();
-})(typeof self !== 'undefined' ? self : globalThis, function createGoPayUtils() {
+(function attachGpcUtils(root, factory) {
+  root.GpcUtils = factory();
+})(typeof self !== 'undefined' ? self : globalThis, function createGpcUtils() {
   const PLUS_PAYMENT_METHOD_PAYPAL = 'paypal';
   const PLUS_PAYMENT_METHOD_PAYPAL_HOSTED = 'paypal-hosted';
   const PLUS_PAYMENT_METHOD_NONE = 'none';
-  const PLUS_PAYMENT_METHOD_GOPAY = 'gopay';
   const PLUS_PAYMENT_METHOD_GPC_HELPER = 'gpc-helper';
   const DEFAULT_GPC_BASE_URL = 'https://gpc.qlhazycoder.top';
   const ALLOWED_GPC_REMOTE_HOST = 'gpc.qlhazycoder.top';
@@ -20,39 +19,7 @@
     if (normalized === PLUS_PAYMENT_METHOD_GPC_HELPER) {
       return PLUS_PAYMENT_METHOD_GPC_HELPER;
     }
-    return normalized === PLUS_PAYMENT_METHOD_GOPAY ? PLUS_PAYMENT_METHOD_GOPAY : PLUS_PAYMENT_METHOD_PAYPAL;
-  }
-
-  const DEFAULT_GOPAY_COUNTRY_CODE = '+86';
-
-  function normalizeGoPayCountryCode(value = '') {
-    const normalized = String(value || '').trim().replace(/[^\d+]/g, '');
-    const digits = normalized.replace(/\D/g, '');
-    return digits ? `+${digits}` : DEFAULT_GOPAY_COUNTRY_CODE;
-  }
-
-  function normalizeGoPayPhone(value = '') {
-    return String(value || '').trim().replace(/[^\d+]/g, '');
-  }
-
-  function normalizeGoPayPhoneForCountry(value = '', countryCode = DEFAULT_GOPAY_COUNTRY_CODE) {
-    const normalizedPhone = normalizeGoPayPhone(value);
-    const normalizedCountryCode = normalizeGoPayCountryCode(countryCode);
-    const countryDigits = normalizedCountryCode.replace(/\D/g, '');
-    let nationalNumber = normalizedPhone.replace(/\D/g, '');
-
-    if (countryDigits && nationalNumber.startsWith(countryDigits)) {
-      nationalNumber = nationalNumber.slice(countryDigits.length);
-    }
-    return nationalNumber;
-  }
-
-  function normalizeGoPayPin(value = '') {
-    return String(value || '').trim().replace(/[^\d]/g, '');
-  }
-
-  function normalizeGoPayOtp(value = '') {
-    return String(value || '').trim().replace(/[^\d]/g, '');
+    return PLUS_PAYMENT_METHOD_PAYPAL;
   }
 
   function normalizeGpcRemainingUses(value) {
@@ -69,6 +36,18 @@
 
   function isGpcCardKeyFormat(value = '') {
     return /^GPC-[A-F0-9]{8}-[A-F0-9]{8}-[A-F0-9]{8}$/.test(normalizeGpcCardKey(value));
+  }
+
+  function unwrapGpcResponse(payload = {}) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return payload;
+    }
+    const hasUnifiedShape = Object.prototype.hasOwnProperty.call(payload, 'data')
+      && (
+        Object.prototype.hasOwnProperty.call(payload, 'code')
+        || Object.prototype.hasOwnProperty.call(payload, 'message')
+      );
+    return hasUnifiedShape ? (payload.data ?? {}) : payload;
   }
 
   function unwrapGpcBalancePayload(payload = {}) {
@@ -162,18 +141,6 @@
     return `${baseUrl}?card_key=${encodeURIComponent(normalizedCardKey)}`;
   }
 
-  function unwrapGpcResponse(payload = {}) {
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-      return payload;
-    }
-    const hasUnifiedShape = Object.prototype.hasOwnProperty.call(payload, 'data')
-      && (
-        Object.prototype.hasOwnProperty.call(payload, 'code')
-        || Object.prototype.hasOwnProperty.call(payload, 'message')
-      );
-    return hasUnifiedShape ? (payload.data ?? {}) : payload;
-  }
-
   function isGpcUnifiedResponseOk(payload = {}) {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
       return true;
@@ -205,6 +172,12 @@
     return [key, message].filter(Boolean).join(': ') || JSON.stringify(field);
   }
 
+  function normalizeLinkedAccountError(text = '') {
+    return /account\s+already\s+linked/i.test(String(text || ''))
+      ? '账号已经绑定订阅，需要手动解绑'
+      : String(text || '').trim();
+  }
+
   function extractGpcResponseErrorDetail(payload = {}, status = 0) {
     if (!payload || typeof payload !== 'object') {
       return status ? `HTTP ${status}` : '未知错误';
@@ -212,17 +185,14 @@
 
     const payloadText = JSON.stringify(payload).toLowerCase();
     if (/account\s+already\s+linked/i.test(payloadText)) {
-      return 'GOPAY已经绑了订阅，需要手动解绑';
+      return '账号已经绑定订阅，需要手动解绑';
     }
 
     const data = payload.data;
     if (data && typeof data === 'object' && !Array.isArray(data)) {
       const nestedDetail = data.detail ?? data.error ?? data.reason;
       if (nestedDetail !== undefined && nestedDetail !== null && String(nestedDetail).trim()) {
-        const nestedText = String(nestedDetail).trim();
-        return /account\s+already\s+linked/i.test(nestedText)
-          ? 'GOPAY已经绑了订阅，需要手动解绑'
-          : nestedText;
+        return normalizeLinkedAccountError(nestedDetail);
       }
       const fields = data.fields ?? data.errors;
       if (Array.isArray(fields) && fields.length > 0) {
@@ -242,18 +212,12 @@
       ?? payload.error_description
       ?? payload.reason;
     if (direct !== undefined && direct !== null && String(direct).trim()) {
-      const directText = String(direct).trim();
-      return /account\s+already\s+linked/i.test(directText)
-        ? 'GOPAY已经绑了订阅，需要手动解绑'
-        : directText;
+      return normalizeLinkedAccountError(direct);
     }
 
     const errorMessages = payload.error_messages ?? payload.errorMessages;
     if (Array.isArray(errorMessages) && errorMessages.length > 0) {
-      const firstMessage = String(errorMessages[0] || '').trim();
-      if (/account\s+already\s+linked/i.test(firstMessage)) {
-        return 'GOPAY已经绑了订阅，需要手动解绑';
-      }
+      const firstMessage = normalizeLinkedAccountError(errorMessages[0]);
       if (firstMessage) {
         return firstMessage;
       }
@@ -313,29 +277,22 @@
   }
 
   return {
-    DEFAULT_GOPAY_COUNTRY_CODE,
     DEFAULT_GPC_BASE_URL,
     PLUS_PAYMENT_METHOD_GPC_HELPER,
-    PLUS_PAYMENT_METHOD_GOPAY,
     PLUS_PAYMENT_METHOD_NONE,
     PLUS_PAYMENT_METHOD_PAYPAL,
     PLUS_PAYMENT_METHOD_PAYPAL_HOSTED,
-    buildGpcCardBalanceUrl,
     buildGpcApiUrl,
+    buildGpcCardBalanceUrl,
     extractGpcResponseErrorDetail,
     formatGpcBalancePayload,
-    getGpcCardStatus,
     getGpcBalanceRemainingUses,
-    isGpcUnifiedResponseOk,
+    getGpcCardStatus,
     isGpcCardKeyFormat,
+    isGpcUnifiedResponseOk,
     normalizeGpcBaseUrl,
     normalizeGpcCardKey,
     normalizeGpcRemainingUses,
-    normalizeGoPayCountryCode,
-    normalizeGoPayPhone,
-    normalizeGoPayPhoneForCountry,
-    normalizeGoPayOtp,
-    normalizeGoPayPin,
     normalizePlusPaymentMethod,
     unwrapGpcBalancePayload,
     unwrapGpcResponse,

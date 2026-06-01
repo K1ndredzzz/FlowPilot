@@ -359,306 +359,6 @@ test('Plus checkout billing sends the billing command to the iframe that contain
   assert.equal(events.completed[0].step, 'plus-checkout-billing');
 });
 
-test('Plus checkout billing uses proxy exit country for GoPay address when available', async () => {
-  const requestedCountries = [];
-  const fetchRequests = [];
-  const { events, executor } = createExecutorHarness({
-    frames: [
-      { frameId: 0, url: 'https://chatgpt.com/checkout/openai_llc/cs_test' },
-      { frameId: 7, url: 'https://js.stripe.com/v3/elements-inner-payment.html' },
-      { frameId: 8, url: 'https://js.stripe.com/v3/elements-inner-address.html' },
-    ],
-    stateByFrame: {
-      0: { hasPayPal: false, hasGoPay: false, paypalCandidates: [], gopayCandidates: [], hasSubscribeButton: true },
-      7: { hasPayPal: false, hasGoPay: true, gopayCandidates: [{ tag: 'button', text: 'GoPay' }] },
-      8: {
-        hasPayPal: false,
-        hasGoPay: false,
-        paypalCandidates: [],
-        gopayCandidates: [],
-        billingFieldsVisible: true,
-        countryText: 'United States',
-      },
-    },
-    getAddressSeedForCountry: (countryValue) => {
-      requestedCountries.push(countryValue);
-      return countryValue === 'JP' ? {
-        countryCode: 'JP',
-        query: 'Tokyo Marunouchi',
-        suggestionIndex: 1,
-        fallback: {
-          address1: 'Marunouchi 1-1',
-          city: 'Chiyoda-ku',
-          region: 'Tokyo',
-          postalCode: '100-0005',
-        },
-      } : createIdAddressSeed();
-    },
-    fetchImpl: async (url, init) => {
-      fetchRequests.push({ url, init });
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({
-          status: 'ok',
-          address: {
-            Address: 'トウキョウト, チヨダク, マルノウチ, 1-1',
-            Trans_Address: 'Marunouchi 1-1, Chiyoda-ku, Tokyo',
-            City: 'Tokyo',
-            State: 'Tokyo',
-            Zip_Code: '100-0005',
-          },
-        }),
-      };
-    },
-    submitRedirectUrl: 'https://app.midtrans.com/snap/v4/redirection/session#/gopay-tokenization/linking',
-  });
-
-  await executor.executePlusCheckoutBilling({
-    plusPaymentMethod: 'gopay',
-    plusCheckoutCountry: 'ID',
-    ipProxyAppliedExitRegion: 'JP',
-  });
-
-  const fillMessage = events.messages.find((entry) => entry.message.type === 'PLUS_CHECKOUT_FILL_BILLING_ADDRESS');
-  assert.equal(requestedCountries[0], 'JP');
-  assert.equal(fillMessage.message.payload.addressSeed.countryCode, 'JP');
-  assert.equal(fillMessage.message.payload.addressSeed.source, 'meiguodizhi');
-  assert.deepEqual(JSON.parse(fetchRequests[0].init.body), {
-    city: 'Chiyoda-ku',
-    path: '/jp-address',
-    method: 'refresh',
-  });
-  assert.equal(events.logs.some((entry) => /GoPay 账单地址将按当前代理出口地区 JP/.test(entry.message)), true);
-});
-
-test('Plus checkout billing refreshes stale GoPay proxy country before filling address', async () => {
-  const requestedCountries = [];
-  const probeCalls = [];
-  const { events, executor } = createExecutorHarness({
-    frames: [
-      { frameId: 0, url: 'https://chatgpt.com/checkout/openai_llc/cs_test' },
-      { frameId: 7, url: 'https://js.stripe.com/v3/elements-inner-payment.html' },
-      { frameId: 8, url: 'https://js.stripe.com/v3/elements-inner-address.html' },
-    ],
-    stateByFrame: {
-      0: { hasPayPal: false, hasGoPay: false, paypalCandidates: [], gopayCandidates: [], hasSubscribeButton: true },
-      7: { hasPayPal: false, hasGoPay: true, gopayCandidates: [{ tag: 'button', text: 'GoPay' }] },
-      8: {
-        hasPayPal: false,
-        hasGoPay: false,
-        paypalCandidates: [],
-        gopayCandidates: [],
-        billingFieldsVisible: true,
-        countryText: 'Indonesia',
-      },
-    },
-    getAddressSeedForCountry: (countryValue) => {
-      requestedCountries.push(countryValue);
-      return countryValue === 'JP' ? {
-        countryCode: 'JP',
-        query: 'Tokyo Chiyoda-ku',
-        suggestionIndex: 1,
-        fallback: {
-          address1: 'Marunouchi 1-1',
-          city: 'Chiyoda-ku',
-          region: 'Tokyo',
-          postalCode: '100-0005',
-        },
-      } : createKrAddressSeed();
-    },
-    fetchImpl: async () => ({
-      ok: false,
-      status: 503,
-      json: async () => ({ status: 'error' }),
-    }),
-    probeIpProxyExit: async (options) => {
-      probeCalls.push(options);
-      return {
-        proxyRouting: {
-          exitRegion: 'JP',
-          exitIp: '203.0.113.8',
-          exitSource: 'page_context',
-          exitEndpoint: 'https://ipinfo.io/json',
-        },
-      };
-    },
-    submitRedirectUrl: 'https://app.midtrans.com/snap/v4/redirection/session#/gopay-tokenization/linking',
-  });
-
-  await executor.executePlusCheckoutBilling({
-    plusPaymentMethod: 'gopay',
-    plusCheckoutCountry: 'ID',
-    ipProxyAppliedExitRegion: 'KR',
-  });
-
-  const fillMessage = events.messages.find((entry) => entry.message.type === 'PLUS_CHECKOUT_FILL_BILLING_ADDRESS');
-  assert.equal(probeCalls.length, 1);
-  assert.equal(probeCalls[0].detectWhenDisabled, true);
-  assert.equal(requestedCountries[0], 'JP');
-  assert.equal(fillMessage.message.payload.addressSeed.countryCode, 'JP');
-  assert.equal(events.logs.some((entry) => entry.message.includes('当前代理出口复测结果：JP / 203.0.113.8')), true);
-  assert.equal(events.logs.some((entry) => /GoPay 账单地址将按当前代理出口地区 JP/.test(entry.message)), true);
-  assert.equal(events.logs.some((entry) => /GoPay 账单地址将按当前代理出口地区 KR/.test(entry.message)), false);
-});
-
-test('Plus checkout billing refuses to reuse stale GoPay proxy country when refresh has no region', async () => {
-  const requestedCountries = [];
-  const { events, executor } = createExecutorHarness({
-    frames: [
-      { frameId: 0, url: 'https://chatgpt.com/checkout/openai_llc/cs_test' },
-      { frameId: 7, url: 'https://js.stripe.com/v3/elements-inner-payment.html' },
-      { frameId: 8, url: 'https://js.stripe.com/v3/elements-inner-address.html' },
-    ],
-    stateByFrame: {
-      0: { hasPayPal: false, hasGoPay: false, paypalCandidates: [], gopayCandidates: [], hasSubscribeButton: true },
-      7: { hasPayPal: false, hasGoPay: true, gopayCandidates: [{ tag: 'button', text: 'GoPay' }] },
-      8: {
-        hasPayPal: false,
-        hasGoPay: false,
-        paypalCandidates: [],
-        gopayCandidates: [],
-        billingFieldsVisible: true,
-        countryText: 'Indonesia',
-      },
-    },
-    getAddressSeedForCountry: (countryValue) => {
-      requestedCountries.push(countryValue);
-      return createKrAddressSeed();
-    },
-    probeIpProxyExit: async () => ({
-      proxyRouting: {
-        reason: 'disabled_probe_only',
-        exitIp: '203.0.113.9',
-        exitRegion: '',
-        exitError: 'missing_region',
-      },
-    }),
-  });
-
-  await assert.rejects(
-    () => executor.executePlusCheckoutBilling({
-      plusPaymentMethod: 'gopay',
-      plusCheckoutCountry: 'ID',
-      ipProxyAppliedExitRegion: 'KR',
-    }),
-    /本次复测没有拿到国家码/
-  );
-
-  assert.equal(requestedCountries.length, 0);
-  assert.equal(events.logs.some((entry) => /已清空旧出口地区 KR/.test(entry.message)), true);
-  assert.equal(events.logs.some((entry) => /GoPay 账单地址将按当前代理出口地区 KR/.test(entry.message)), false);
-});
-
-test('Plus checkout billing normalizes legacy Korean postal code for GoPay address', async () => {
-  const requestedCountries = [];
-  const fetchRequests = [];
-  const { events, executor } = createExecutorHarness({
-    frames: [
-      { frameId: 0, url: 'https://chatgpt.com/checkout/openai_llc/cs_test' },
-      { frameId: 7, url: 'https://js.stripe.com/v3/elements-inner-payment.html' },
-      { frameId: 8, url: 'https://js.stripe.com/v3/elements-inner-address.html' },
-    ],
-    stateByFrame: {
-      0: { hasPayPal: false, hasGoPay: false, paypalCandidates: [], gopayCandidates: [], hasSubscribeButton: true },
-      7: { hasPayPal: false, hasGoPay: true, gopayCandidates: [{ tag: 'button', text: 'GoPay' }] },
-      8: {
-        hasPayPal: false,
-        hasGoPay: false,
-        paypalCandidates: [],
-        gopayCandidates: [],
-        billingFieldsVisible: true,
-        countryText: 'United States',
-      },
-    },
-    getAddressSeedForCountry: (countryValue) => {
-      requestedCountries.push(countryValue);
-      return countryValue === 'KR' ? createKrAddressSeed() : createIdAddressSeed();
-    },
-    fetchImpl: async (url, init) => {
-      fetchRequests.push({ url, init });
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({
-          status: 'ok',
-          address: {
-            Address: '서울특별시 중구 세종대로 110',
-            Trans_Address: 'Sejong-daero 110, Jung-gu, Seoul',
-            City: 'Jung-gu',
-            State: 'Seoul',
-            Zip_Code: '150-300',
-          },
-        }),
-      };
-    },
-    submitRedirectUrl: 'https://app.midtrans.com/snap/v4/redirection/session#/gopay-tokenization/linking',
-  });
-
-  await executor.executePlusCheckoutBilling({
-    plusPaymentMethod: 'gopay',
-    plusCheckoutCountry: 'ID',
-    ipProxyAppliedExitRegion: 'KR',
-  });
-
-  const fillMessage = events.messages.find((entry) => entry.message.type === 'PLUS_CHECKOUT_FILL_BILLING_ADDRESS');
-  assert.equal(requestedCountries[0], 'KR');
-  assert.equal(fillMessage.message.payload.addressSeed.countryCode, 'KR');
-  assert.equal(fillMessage.message.payload.addressSeed.source, 'meiguodizhi');
-  assert.equal(fillMessage.message.payload.addressSeed.fallback.address1, 'Sejong-daero 110, Jung-gu, Seoul');
-  assert.equal(fillMessage.message.payload.addressSeed.fallback.postalCode, '04524');
-  assert.match(fillMessage.message.payload.addressSeed.fallback.postalCode, /^\d{5}$/);
-  assert.deepEqual(JSON.parse(fetchRequests[0].init.body), {
-    city: 'Jung-gu',
-    path: '/kr-address',
-    method: 'refresh',
-  });
-  assert.equal(events.logs.some((entry) => /GoPay 账单地址将按当前代理出口地区 KR/.test(entry.message)), true);
-});
-
-test('Plus checkout billing selects GoPay and waits for a GoPay redirect', async () => {
-  const { checkoutTab, events, executor } = createExecutorHarness({
-    frames: [
-      { frameId: 0, url: 'https://chatgpt.com/checkout/openai_ie/cs_test' },
-      { frameId: 7, url: 'https://js.stripe.com/v3/elements-inner-payment.html' },
-      { frameId: 8, url: 'https://js.stripe.com/v3/elements-inner-address.html' },
-    ],
-    stateByFrame: {
-      0: { hasPayPal: false, hasGoPay: false, paypalCandidates: [], gopayCandidates: [], hasSubscribeButton: true },
-      7: { hasPayPal: false, hasGoPay: true, gopayCandidates: [{ tag: 'button', text: 'GoPay' }] },
-      8: {
-        hasPayPal: false,
-        hasGoPay: false,
-        paypalCandidates: [],
-        gopayCandidates: [],
-        billingFieldsVisible: true,
-        countryText: 'Indonesia',
-      },
-    },
-    getAddressSeedForCountry: () => createIdAddressSeed(),
-    fetchImpl: async () => ({
-      ok: false,
-      status: 404,
-      json: async () => ({ status: 'error' }),
-    }),
-    submitRedirectUrl: 'https://gopay.co.id/payment/session',
-  });
-
-  await executor.executePlusCheckoutBilling({ plusPaymentMethod: 'gopay' });
-
-  const selectMessage = events.messages.find((entry) => entry.message.type === 'PLUS_CHECKOUT_SELECT_GOPAY');
-  const paypalSelectMessage = events.messages.find((entry) => entry.message.type === 'PLUS_CHECKOUT_SELECT_PAYPAL');
-  const fillMessage = events.messages.find((entry) => entry.message.type === 'PLUS_CHECKOUT_FILL_BILLING_ADDRESS');
-  const subscribeMessage = events.messages.find((entry) => entry.message.type === 'PLUS_CHECKOUT_CLICK_SUBSCRIBE');
-  assert.equal(selectMessage.frameId, 7);
-  assert.equal(selectMessage.message.payload.paymentMethod, 'gopay');
-  assert.equal(paypalSelectMessage, undefined);
-  assert.equal(fillMessage.message.payload.addressSeed.countryCode, 'ID');
-  assert.equal(subscribeMessage.message.payload.paymentMethod, 'gopay');
-  assert.equal(checkoutTab.url, 'https://gopay.co.id/payment/session');
-  assert.equal(events.completed[0].step, 'plus-checkout-billing');
-});
-
 test('Plus checkout billing still inspects a frame when ping readiness is stale', async () => {
   const { events, executor } = createExecutorHarness({
     frames: [
@@ -1101,6 +801,50 @@ test('GPC billing collapses repeated running status logs with a multiplier', asy
   assert.equal(events.completed.length, 1);
 });
 
+test('GPC billing collapses repeated start-ready status logs with a multiplier before terminal failure', async () => {
+  const { events, executor, pageHarness } = createGpcPageExecutorHarness([
+    {
+      startButtonText: '开始 Plus 充值',
+      logText: 'SYSTEM 页面已就绪',
+      isCardModeActive: false,
+    },
+    {
+      startButtonText: '开始 Plus 充值',
+      logText: 'SYSTEM 页面已就绪',
+      isCardModeActive: false,
+    },
+    {
+      startButtonText: '开始 Plus 充值',
+      logText: 'SYSTEM 页面已就绪',
+      isCardModeActive: false,
+    },
+    {
+      startButtonText: '开始 Plus 充值',
+      logText: '[02:20:09] ERROR 该账户没有试用资格',
+      noTrial: true,
+      isCardModeActive: false,
+    },
+  ]);
+
+  await assert.rejects(
+    () => executor.executePlusCheckoutBilling({
+      plusPaymentMethod: 'gpc-helper',
+      plusCheckoutSource: 'gpc-helper',
+      plusCheckoutTabId: 77,
+    }),
+    /PLUS_CHECKOUT_NON_FREE_TRIAL::/
+  );
+
+  const startReadyLogs = events.logs.filter((entry) => /GPC 页面状态：开始 Plus 充值/.test(entry.message));
+  const modeReadyLogs = events.logs.filter((entry) => /GPC 卡密充值模式已就绪，准备启动/.test(entry.message));
+  assert.equal(pageHarness.clicks.length, 0);
+  assert.equal(startReadyLogs.length, 1);
+  assert.equal(modeReadyLogs.length, 1);
+  assert.match(startReadyLogs[0].message, /开始 Plus 充值 ×4/);
+  assert.match(modeReadyLogs[0].message, /准备启动。 ×3/);
+  assert.equal(events.completed.length, 0);
+});
+
 test('GPC billing fails current round without restart when account has no trial eligibility', async () => {
   const { events, executor, pageHarness } = createGpcPageExecutorHarness([
     { startButtonText: '开始 Plus 充值', logText: '[02:20:00] ACTION 任务开始执行... [02:20:09] ERROR 该账户没有试用资格', noTrial: true },
@@ -1142,6 +886,80 @@ test('GPC billing treats no-trial log text as terminal even when page flag is mi
   assert.equal(pageHarness.clicks.length, 1);
   assert.equal(events.logs.some((entry) => /准备再次启动/.test(entry.message)), false);
   assert.equal(events.completed.length, 0);
+});
+
+test('GPC billing treats Plus trial-ineligible token guidance log as terminal even when page flag is missing', async () => {
+  const { events, executor, pageHarness } = createGpcPageExecutorHarness([
+    { startButtonText: '开始 Plus 充值', logText: 'SYSTEM 页面已就绪' },
+    { startButtonText: '任务进行中', logText: '处理中' },
+    {
+      startButtonText: '开始 Plus 充值',
+      logText: '[13:44:04] ERROR 任务失败：该账号不具备 Plus 试用资格，请更换有试用资格的账号 Token。。',
+      noTrial: false,
+    },
+  ]);
+
+  await assert.rejects(
+    () => executor.executePlusCheckoutBilling({
+      plusPaymentMethod: 'gpc-helper',
+      plusCheckoutSource: 'gpc-helper',
+      plusCheckoutTabId: 77,
+    }),
+    /PLUS_CHECKOUT_NON_FREE_TRIAL::.*最近日志：\[13:44:04\] ERROR 任务失败：该账号不具备 Plus 试用资格，请更换有试用资格的账号 Token。*/
+  );
+
+  assert.equal(pageHarness.clicks.length, 1);
+  assert.equal(events.logs.some((entry) => /准备再次启动/.test(entry.message)), false);
+  assert.equal(events.completed.length, 0);
+});
+
+test('GPC billing treats task execution error log as recoverable page-ended failure', async () => {
+  const { events, executor, pageHarness } = createGpcPageExecutorHarness([
+    { startButtonText: '开始 Plus 充值', logText: 'SYSTEM 页面已就绪' },
+    { startButtonText: '任务进行中', logText: '处理中' },
+    {
+      startButtonText: '开始 Plus 充值',
+      logText: '[03:25:39] SUCCESS [01/10] 检测运行环境 [03:25:49] SUCCESS [02/10] Checkout 订单创建成功 [03:25:54] SUCCESS [02/10] 解析 Midtrans Token [03:25:57] WARN [02/10] 执行错误 [03:25:57] ERROR 任务失败：执行错误',
+      noTrial: false,
+    },
+  ]);
+
+  await assert.rejects(
+    () => executor.executePlusCheckoutBilling({
+      plusPaymentMethod: 'gpc-helper',
+      plusCheckoutSource: 'gpc-helper',
+      plusCheckoutTabId: 77,
+    }),
+    /GPC_PAGE_FLOW_ENDED::步骤 7：GPC 页面任务执行错误，准备重新回到步骤 6 创建新 Checkout。.*最近日志：\[03:25:57\] ERROR 任务失败：执行错误/
+  );
+
+  assert.equal(pageHarness.clicks.length, 1);
+  assert.equal(events.logs.some((entry) => /准备再次启动/.test(entry.message)), false);
+  assert.equal(events.completed.length, 0);
+});
+
+test('GPC billing does not treat generic execution error log as recoverable Midtrans restart signal', async () => {
+  const { events, executor, pageHarness } = createGpcPageExecutorHarness([
+    { startButtonText: '开始 Plus 充值', logText: 'SYSTEM 页面已就绪' },
+    { startButtonText: '任务进行中', logText: '处理中' },
+    {
+      startButtonText: '开始 Plus 充值',
+      logText: '[03:25:57] WARN [02/10] 执行错误 [03:25:57] ERROR 任务失败：执行错误',
+      noTrial: false,
+    },
+    { startButtonText: '任务进行中', logText: '第二次处理中' },
+    { startButtonText: '开始 Plus 充值', logText: '订阅完成', hasSubscriptionDone: true },
+  ]);
+
+  await executor.executePlusCheckoutBilling({
+    plusPaymentMethod: 'gpc-helper',
+    plusCheckoutSource: 'gpc-helper',
+    plusCheckoutTabId: 77,
+  });
+
+  assert.equal(pageHarness.clicks.length, 2);
+  assert.equal(events.logs.some((entry) => /准备再次启动/.test(entry.message)), true);
+  assert.equal(events.completed.length, 1);
 });
 
 test('GPC billing times out when page never finishes', async () => {

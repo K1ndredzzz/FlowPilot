@@ -31,7 +31,6 @@ test('dynamic covered injections load operation delay after utils', () => {
     ['flows/openai/background/steps/create-plus-checkout.js', 'PLUS_CHECKOUT_INJECT_FILES'],
     ['flows/openai/background/steps/fill-plus-checkout.js', 'PLUS_CHECKOUT_INJECT_FILES'],
     ['flows/openai/background/steps/paypal-approve.js', 'PAYPAL_INJECT_FILES'],
-    ['flows/openai/background/steps/gopay-approve.js', 'GOPAY_INJECT_FILES'],
     ['background/mail-2925-session.js', 'MAIL2925_INJECT'],
   ];
   for (const [file, constantName] of expectations) {

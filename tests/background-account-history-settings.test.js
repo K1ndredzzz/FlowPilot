@@ -50,6 +50,11 @@ function extractFunction(name) {
   return source.slice(start, end);
 }
 
+test('background defaults Plus payment method to GPC', () => {
+  assert.match(source, /const DEFAULT_PLUS_PAYMENT_METHOD = PLUS_PAYMENT_METHOD_GPC_HELPER;/);
+  assert.match(source, /plusPaymentMethod: DEFAULT_PLUS_PAYMENT_METHOD/);
+});
+
 test('background account history settings are normalized independently from hotmail service mode', () => {
   const bundle = [
     extractFunction('normalizeCodex2ApiUrl'),
@@ -137,7 +142,6 @@ const SIGNUP_METHOD_PHONE = 'phone';
 const DEFAULT_SIGNUP_METHOD = SIGNUP_METHOD_EMAIL;
 const DEFAULT_ACTIVE_FLOW_ID = 'openai';
 const PLUS_PAYMENT_METHOD_PAYPAL = 'paypal';
-const PLUS_PAYMENT_METHOD_GOPAY = 'gopay';
 const PLUS_PAYMENT_METHOD_GPC_HELPER = 'gpc-helper';
 const PLUS_ACCOUNT_ACCESS_STRATEGY_OAUTH = 'oauth';
 const PLUS_ACCOUNT_ACCESS_STRATEGY_SUB2API_CODEX_SESSION = 'sub2api_codex_session';
@@ -172,20 +176,7 @@ const self = {
       return normalizedTargetId === 'kiro-rs' ? normalizedTargetId : fallback;
     },
   },
-  GoPayUtils: {
-    normalizeGoPayCountryCode(value) {
-      const digits = String(value || '').replace(/\\D/g, '');
-      return digits ? \`+\${digits}\` : '+86';
-    },
-    normalizeGoPayPhone(value) {
-      return String(value || '').trim().replace(/[^\\d+]/g, '');
-    },
-    normalizeGoPayOtp(value) {
-      return String(value || '').trim().replace(/[^\\d]/g, '');
-    },
-    normalizeGoPayPin(value) {
-      return String(value || '').trim().replace(/[^\\d]/g, '');
-    },
+  GpcUtils: {
     normalizeGpcBaseUrl(value) {
       return String(value || 'https://gpc.qlhazycoder.top')
         .trim()
@@ -241,7 +232,7 @@ return {
   assert.equal(api.normalizePersistentSettingValue('phoneVerificationEnabled', 1), true);
   assert.equal(api.normalizePersistentSettingValue('phoneSignupReloginAfterBindEmailEnabled', 1), true);
   assert.equal(api.normalizePersistentSettingValue('phoneSignupReloginAfterBindEmailEnabled', 0), false);
-  assert.equal(api.normalizePersistentSettingValue('plusPaymentMethod', 'gopay'), 'gopay');
+  assert.equal(api.normalizePersistentSettingValue('plusPaymentMethod', 'gopay'), 'paypal');
   assert.equal(api.normalizePersistentSettingValue('plusPaymentMethod', 'gpc-helper'), 'gpc-helper');
   assert.equal(api.normalizePersistentSettingValue('plusPaymentMethod', 'paypal-hosted'), 'paypal-hosted');
   assert.equal(api.normalizePersistentSettingValue('plusPaymentMethod', 'paypal'), 'paypal');

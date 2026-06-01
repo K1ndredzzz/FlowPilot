@@ -337,3 +337,127 @@ test('flow capability registry forces SUB2API session import only for contributi
   assert.equal(capabilityState.canEditPlusAccountAccessStrategy, false);
   assert.equal(capabilityState.stepDefinitionOptions.plusAccountAccessStrategy, 'sub2api_codex_session');
 });
+
+test('flow capability registry validates OpenAI webchat target configuration without touching Plus strategy', () => {
+  const api = loadApi();
+  const registry = api.createFlowCapabilityRegistry();
+
+  const missingConfigResult = registry.validateAutoRunStart({
+    state: {
+      activeFlowId: 'openai',
+      targetId: 'webchat',
+      signupMethod: 'email',
+      plusModeEnabled: true,
+      plusAccountAccessStrategy: 'cpa_codex_session',
+    },
+  });
+
+  assert.equal(missingConfigResult.ok, false);
+  assert.equal(missingConfigResult.errors[0].code, 'openai_webchat_config_required');
+  assert.equal(missingConfigResult.capabilityState.openaiWebchat.targetIsWebchat, true);
+  assert.equal(missingConfigResult.capabilityState.stepDefinitionOptions.openaiWebchatUploadEnabled, true);
+  assert.equal(missingConfigResult.capabilityState.effectivePlusAccountAccessStrategy, 'oauth');
+
+  const configuredState = registry.resolveSidepanelCapabilities({
+    state: {
+      activeFlowId: 'openai',
+      targetId: 'webchat',
+      openaiWebchatUrl: 'https://webchat.example.com/admin',
+      openaiWebchatAdminKey: 'admin-key',
+      plusModeEnabled: true,
+      plusAccountAccessStrategy: 'cpa_codex_session',
+    },
+  });
+
+  assert.equal(configuredState.openaiWebchat.configComplete, true);
+  assert.equal(configuredState.openaiWebchat.uploadRequired, true);
+  assert.equal(configuredState.stepDefinitionOptions.openaiWebchatUploadEnabled, true);
+  assert.deepEqual(configuredState.availablePlusAccountAccessStrategies, ['oauth']);
+  assert.equal(configuredState.effectivePlusAccountAccessStrategy, 'oauth');
+});
+
+test('flow capability registry disables phone settings for OpenAI webchat target', () => {
+  const api = loadApi();
+  const registry = api.createFlowCapabilityRegistry();
+
+  const capabilityState = registry.resolveSidepanelCapabilities({
+    state: {
+      activeFlowId: 'openai',
+      targetId: 'webchat',
+      phoneVerificationEnabled: true,
+      signupMethod: 'phone',
+      openaiWebchatUrl: 'https://webchat.example.com/admin',
+      openaiWebchatAdminKey: 'admin-key',
+    },
+  });
+
+  assert.equal(capabilityState.canShowPhoneSettings, false);
+  assert.equal(capabilityState.runtimeLocks.phoneVerificationEnabled, false);
+  assert.equal(capabilityState.canUsePhoneSignup, false);
+  assert.equal(capabilityState.effectiveSignupMethod, 'email');
+  assert.deepEqual(capabilityState.effectiveSignupMethods, ['email']);
+  assert.equal(capabilityState.stepDefinitionOptions.phoneVerificationEnabled, false);
+  assert.equal(capabilityState.stepDefinitionOptions.signupMethod, 'email');
+  assert.equal(capabilityState.stepDefinitionOptions.openaiWebchatUploadEnabled, true);
+  assert.deepEqual(
+    capabilityState.visibleGroupIds,
+    ['openai-plus', 'shared-auto-run', 'openai-oauth', 'openai-step6', 'openai-target-webchat', 'service-account', 'service-email', 'service-proxy']
+  );
+
+  const validation = registry.validateModeSwitch({
+    state: {
+      activeFlowId: 'openai',
+      targetId: 'webchat',
+      phoneVerificationEnabled: true,
+      signupMethod: 'phone',
+      openaiWebchatUrl: 'https://webchat.example.com/admin',
+      openaiWebchatAdminKey: 'admin-key',
+    },
+    changedKeys: ['targetId', 'phoneVerificationEnabled', 'signupMethod'],
+  });
+
+  assert.equal(validation.ok, false);
+  assert.equal(validation.normalizedUpdates.phoneVerificationEnabled, false);
+  assert.equal(validation.normalizedUpdates.signupMethod, 'email');
+  assert.deepEqual(
+    validation.errors.map((entry) => entry.code),
+    ['phone_verification_unsupported', 'phone_signup_panel_unsupported']
+  );
+});
+
+test('flow capability registry ignores hidden OpenAI webchat add-on upload outside webchat target', () => {
+  const api = loadApi();
+  const registry = api.createFlowCapabilityRegistry();
+
+  const validation = registry.validateModeSwitch({
+    state: {
+      activeFlowId: 'openai',
+      targetId: 'cpa',
+      openaiWebchatUploadEnabled: true,
+      openaiWebchatUrl: '',
+      openaiWebchatAdminKey: '',
+    },
+    changedKeys: ['openaiWebchatUploadEnabled'],
+  });
+
+  assert.equal(validation.ok, true);
+  assert.deepEqual(validation.normalizedUpdates, {});
+  assert.deepEqual(validation.errors, []);
+  assert.equal(validation.capabilityState.openaiWebchat.additionalUploadEnabled, false);
+  assert.equal(validation.capabilityState.openaiWebchat.uploadRequired, false);
+  assert.equal(validation.capabilityState.stepDefinitionOptions.openaiWebchatUploadEnabled, false);
+
+  const configuredState = registry.resolveSidepanelCapabilities({
+    state: {
+      activeFlowId: 'openai',
+      targetId: 'cpa',
+      openaiWebchatUploadEnabled: true,
+      openaiWebchatUrl: 'https://webchat.example.com/admin',
+      openaiWebchatAdminKey: 'admin-key',
+    },
+  });
+
+  assert.equal(configuredState.openaiWebchat.additionalUploadEnabled, false);
+  assert.equal(configuredState.openaiWebchat.uploadRequired, false);
+  assert.equal(configuredState.stepDefinitionOptions.openaiWebchatUploadEnabled, false);
+});

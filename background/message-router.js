@@ -18,6 +18,10 @@
       clearFreeReusablePhoneActivation,
       clearGrokSsoCookies,
       clearLuckmailRuntimeState,
+      clearStep5ProfileStatePatch = () => ({
+        step5ProfilePayload: null,
+        step5ProfileRecoveryCount: 0,
+      }),
       clearYydsMailRuntimeState,
       clearStopRequest,
       closeLocalhostCallbackTabs,
@@ -219,20 +223,36 @@
     function buildAutoRunFlowStateUpdates(payload = {}) {
       const hasActiveFlowId = Object.prototype.hasOwnProperty.call(payload, 'activeFlowId');
       const hasTargetId = Object.prototype.hasOwnProperty.call(payload, 'targetId');
-      if (!hasActiveFlowId && !hasTargetId) {
+      const hasSignupMethod = Object.prototype.hasOwnProperty.call(payload, 'signupMethod');
+      const hasPhoneVerificationEnabled = Object.prototype.hasOwnProperty.call(payload, 'phoneVerificationEnabled');
+      const hasPlusModeEnabled = Object.prototype.hasOwnProperty.call(payload, 'plusModeEnabled');
+      if (!hasActiveFlowId && !hasTargetId && !hasSignupMethod && !hasPhoneVerificationEnabled && !hasPlusModeEnabled) {
         return {};
       }
       const activeFlowId = normalizeMessageFlowId(payload.activeFlowId, 'openai');
-      const updates = {
-        activeFlowId,
-        flowId: activeFlowId,
-      };
+      const updates = {};
+      if (hasActiveFlowId || hasTargetId) {
+        updates.activeFlowId = activeFlowId;
+        updates.flowId = activeFlowId;
+      }
       if (hasTargetId) {
         updates.targetId = normalizeMessageTargetId(
           activeFlowId,
           payload.targetId,
           activeFlowId === 'kiro' ? 'kiro-rs' : 'cpa'
         );
+      }
+      if (hasSignupMethod) {
+        updates.signupMethod = normalizeSignupMethod(payload.signupMethod);
+      }
+      if (hasPhoneVerificationEnabled) {
+        updates.phoneVerificationEnabled = Boolean(payload.phoneVerificationEnabled);
+      }
+      if (hasPlusModeEnabled) {
+        updates.plusModeEnabled = Boolean(payload.plusModeEnabled);
+      }
+      if (hasSignupMethod || hasPhoneVerificationEnabled || hasPlusModeEnabled || hasTargetId || hasActiveFlowId) {
+        updates.resolvedSignupMethod = null;
       }
       return updates;
     }
@@ -669,7 +689,7 @@
       if (normalized === 'gpc-helper') {
         return 'gpc-helper';
       }
-      return normalized === 'gopay' ? 'gopay' : 'paypal';
+      return 'paypal';
     }
 
     function getPlusPaymentMethodLabel(value = '') {
@@ -683,7 +703,7 @@
       if (method === 'gpc-helper') {
         return 'GPC';
       }
-      return method === 'gopay' ? 'GoPay' : 'PayPal';
+      return 'PayPal';
     }
 
     function normalizePlusAccountAccessStrategyForDisplay(value = '') {
@@ -1155,6 +1175,9 @@
           const currentState = await getState();
           const currentNodeStatus = currentState?.nodeStatuses?.[nodeId] || '';
           const isSignupPhonePasswordMismatch = /SIGNUP_PHONE_PASSWORD_MISMATCH::/i.test(String(message.error || ''));
+          if (nodeId === 'fill-profile' && typeof setState === 'function') {
+            await setState(clearStep5ProfileStatePatch());
+          }
           if (isStopError(message.error)) {
             await setNodeStatus(nodeId, 'stopped');
             await addLog('已被用户停止', 'warn', { nodeId });
@@ -1170,59 +1193,6 @@
             }
             notifyNodeError(nodeId, message.error);
           }
-          return { ok: true };
-        }
-
-        case 'RESOLVE_PLUS_MANUAL_CONFIRMATION': {
-          const currentState = await getState();
-          const step = Number(message.payload?.step) || Number(currentState?.plusManualConfirmationStep) || 0;
-          const confirmationNodeId = getStepKeyForState(step, currentState) || String(currentState?.currentNodeId || '').trim();
-          const confirmed = Boolean(message.payload?.confirmed);
-          const requestId = String(message.payload?.requestId || '').trim();
-          const currentRequestId = String(currentState?.plusManualConfirmationRequestId || '').trim();
-          const method = String(currentState?.plusManualConfirmationMethod || '').trim().toLowerCase();
-          if (!currentState?.plusManualConfirmationPending) {
-            return { ok: true, ignored: true };
-          }
-          if (requestId && currentRequestId && requestId !== currentRequestId) {
-            return { ok: true, ignored: true };
-          }
-
-          const clearManualConfirmationState = {
-            plusManualConfirmationPending: false,
-            plusManualConfirmationRequestId: '',
-            plusManualConfirmationStep: 0,
-            plusManualConfirmationMethod: '',
-            plusManualConfirmationTitle: '',
-            plusManualConfirmationMessage: '',
-          };
-
-          await setState(clearManualConfirmationState);
-          if (typeof broadcastDataUpdate === 'function') {
-            broadcastDataUpdate(clearManualConfirmationState);
-          }
-
-          if (confirmed) {
-            const methodLabel = method === 'gopay' ? 'GoPay' : '手动';
-            await addLog(`步骤 ${step}：已确认${methodLabel}订阅完成，准备继续下一步。`, 'ok');
-            await completeNodeFromBackground(confirmationNodeId, {
-              plusManualConfirmationMethod: currentState?.plusManualConfirmationMethod || '',
-              plusManualConfirmedAt: Date.now(),
-            });
-            return { ok: true };
-          }
-
-          const cancelMessage = method === 'gopay'
-            ? '已取消 GoPay 订阅确认'
-            : '已取消当前手动确认';
-          await setNodeStatus(confirmationNodeId, 'failed');
-          await addLog(`步骤 ${step}：${cancelMessage}。`, 'warn');
-          await appendManualAccountRunRecordIfNeeded(
-            confirmationNodeId ? `node:${confirmationNodeId}:failed` : 'failed',
-            null,
-            cancelMessage
-          );
-          notifyNodeError(confirmationNodeId, cancelMessage);
           return { ok: true };
         }
 
@@ -1474,6 +1444,7 @@
           const currentState = await getState();
           const updates = buildPersistentSettingsPayload(message.payload || {});
           const sessionUpdates = buildLuckmailSessionSettingsPayload(message.payload || {});
+          const runtimeStateUpdates = {};
           const modeValidation = validateModeSwitch({
             ...currentState,
             ...updates,
@@ -1497,7 +1468,16 @@
             || Object.prototype.hasOwnProperty.call(updates, 'activeFlowId')
             || Object.prototype.hasOwnProperty.call(updates, 'accountContributionEnabled')
           ) {
-            updates.signupMethod = resolveSignupMethod(nextSignupState);
+            const resolvedSignupMethod = resolveSignupMethod(nextSignupState);
+            const rawFrozenSignupMethod = String(currentState?.resolvedSignupMethod || '').trim().toLowerCase();
+            updates.signupMethod = resolvedSignupMethod;
+            if (
+              rawFrozenSignupMethod === 'phone'
+              || rawFrozenSignupMethod === 'email'
+              || normalizeSignupMethod(currentState?.signupMethod) !== resolvedSignupMethod
+            ) {
+              runtimeStateUpdates.resolvedSignupMethod = null;
+            }
           }
           const nextPersistedSignupMethod = Object.prototype.hasOwnProperty.call(updates, 'signupMethod')
             ? updates.signupMethod
@@ -1526,6 +1506,7 @@
           const stateUpdates = {
             ...canonicalSettingsUpdates,
             ...sessionUpdates,
+            ...runtimeStateUpdates,
           };
           if (Object.prototype.hasOwnProperty.call(canonicalSettingsUpdates, 'activeFlowId')
             && !Object.prototype.hasOwnProperty.call(stateUpdates, 'flowId')) {
@@ -1567,12 +1548,6 @@
               sub2apiProxyId: null,
               codex2apiSessionId: null,
               codex2apiOAuthState: null,
-              plusManualConfirmationPending: false,
-              plusManualConfirmationRequestId: '',
-              plusManualConfirmationStep: 0,
-              plusManualConfirmationMethod: '',
-              plusManualConfirmationTitle: '',
-              plusManualConfirmationMessage: '',
             });
           }
           if (shouldRebuildNodeStatuses && nextNodeIds.length > 0) {

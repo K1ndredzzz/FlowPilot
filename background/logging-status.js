@@ -36,7 +36,6 @@
         'cloudmail': 'Cloud Mail',
         'plus-checkout': 'Plus Checkout',
         'paypal-flow': 'PayPal 授权页',
-        'gopay-flow': 'GoPay 授权页',
         'unknown-source': '未知来源',
       };
       return labels[source] || source || '未知来源';

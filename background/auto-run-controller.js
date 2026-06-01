@@ -27,6 +27,7 @@
       isAddPhoneAuthFailure,
       isGpcPageFlowEndedFailure,
       isKiroProxyFailure,
+      isAutoRunTimerParkedError,
       isPhoneSmsPlatformRateLimitFailure,
       isPlusCheckoutNonFreeTrialFailure,
       isRestartCurrentAttemptError,
@@ -817,6 +818,14 @@
                 attemptRun,
                 sessionId: 0,
               });
+              break;
+            }
+
+            const parkedByExplicitTimer = typeof isAutoRunTimerParkedError === 'function'
+              ? isAutoRunTimerParkedError(err)
+              : /AUTO_RUN_TIMER_PARKED::/i.test(err?.message || String(err || ''));
+            if (parkedByExplicitTimer) {
+              parkedByTimer = true;
               break;
             }
 

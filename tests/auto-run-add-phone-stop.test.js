@@ -219,6 +219,7 @@ test('auto-run controller skips add-phone failures to the next round instead of 
     getStopRequested: () => false,
     hasSavedProgress: () => false,
     isAddPhoneAuthFailure: (error) => /add-phone|手机号页面|手机号页|手机号码|手机号/i.test(error?.message || String(error || '')),
+    isAutoRunTimerParkedError: () => false,
     isRestartCurrentAttemptError: () => false,
     isStopError: (error) => (error?.message || String(error || '')) === '流程已被用户停止。',
     launchAutoRunTimerPlan: async () => false,

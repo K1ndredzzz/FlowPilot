@@ -8,7 +8,7 @@
   const PAYPAL_INJECT_FILES = ['content/utils.js', 'content/operation-delay.js', 'flows/openai/content/paypal-flow.js'];
   const PLUS_PAYMENT_METHOD_PAYPAL = 'paypal';
   const PLUS_PAYMENT_METHOD_PAYPAL_HOSTED = 'paypal-hosted';
-  const PLUS_PAYMENT_METHOD_GOPAY = 'gopay';
+
   const PLUS_PAYMENT_METHOD_GPC_HELPER = 'gpc-helper';
   const LOCAL_CHECKOUT_PROXY_HEALTH_URL = 'http://127.0.0.1:21988/health';
   const LOCAL_CHECKOUT_PROXY_URL = 'socks5://127.0.0.1:21987';
@@ -274,8 +274,8 @@ function FindProxyForURL(url, host) {
 
     function normalizePlusPaymentMethod(value = '') {
       const rootScope = typeof self !== 'undefined' ? self : globalThis;
-      if (rootScope.GoPayUtils?.normalizePlusPaymentMethod) {
-        return rootScope.GoPayUtils.normalizePlusPaymentMethod(value);
+      if (rootScope.GpcUtils?.normalizePlusPaymentMethod) {
+        return rootScope.GpcUtils.normalizePlusPaymentMethod(value);
       }
       const normalized = String(value || '').trim().toLowerCase();
       if (normalized === PLUS_PAYMENT_METHOD_PAYPAL_HOSTED || normalized === 'paypal_direct' || normalized === 'paypal-direct') {
@@ -284,7 +284,7 @@ function FindProxyForURL(url, host) {
       if (normalized === PLUS_PAYMENT_METHOD_GPC_HELPER) {
         return PLUS_PAYMENT_METHOD_GPC_HELPER;
       }
-      return normalized === PLUS_PAYMENT_METHOD_GOPAY ? PLUS_PAYMENT_METHOD_GOPAY : PLUS_PAYMENT_METHOD_PAYPAL;
+      return PLUS_PAYMENT_METHOD_PAYPAL;
     }
 
     function getCheckoutModeLabel(state = {}) {
@@ -295,7 +295,7 @@ function FindProxyForURL(url, host) {
       if (paymentMethod === PLUS_PAYMENT_METHOD_PAYPAL_HOSTED) {
         return 'PayPal 无卡直绑';
       }
-      return paymentMethod === PLUS_PAYMENT_METHOD_GOPAY ? 'GoPay 订阅页' : 'Plus Checkout';
+      return 'Plus Checkout';
     }
 
     function getPlusPaymentMethodLabel(method = PLUS_PAYMENT_METHOD_PAYPAL) {
@@ -306,7 +306,7 @@ function FindProxyForURL(url, host) {
       if (paymentMethod === PLUS_PAYMENT_METHOD_PAYPAL_HOSTED) {
         return 'PayPal 无卡直绑';
       }
-      return paymentMethod === PLUS_PAYMENT_METHOD_GOPAY ? 'GoPay' : 'PayPal';
+      return 'PayPal';
     }
 
     async function openFreshChatGptTabForCheckoutCreate(options = {}) {
@@ -1223,8 +1223,8 @@ function FindProxyForURL(url, host) {
 
     function normalizeGpcBaseUrl(apiUrl = '') {
       const rootScope = typeof self !== 'undefined' ? self : globalThis;
-      if (rootScope.GoPayUtils?.normalizeGpcBaseUrl) {
-        return rootScope.GoPayUtils.normalizeGpcBaseUrl(apiUrl);
+      if (rootScope.GpcUtils?.normalizeGpcBaseUrl) {
+        return rootScope.GpcUtils.normalizeGpcBaseUrl(apiUrl);
       }
       let normalized = String(apiUrl || DEFAULT_GPC_BASE_URL).trim().replace(/\/+$/g, '');
       normalized = normalized.replace(/\/api\/checkout\/start$/i, '');
