@@ -32,6 +32,80 @@ test('grok content script does not patch global MouseEvent prototypes', () => {
   assert.match(source, /screenY:/);
 });
 
+test('grok profile submission waits for human verification success before clicking complete', () => {
+  const source = fs.readFileSync('flows/grok/content/register-page.js', 'utf8');
+  const profileIndex = source.indexOf('async function submitGrokProfile');
+  const waitIndex = source.indexOf('await waitForGrokHumanVerificationSuccess()', profileIndex);
+  const buttonIndex = source.indexOf('const button = findGrokSubmitButton()', profileIndex);
+  const clickIndex = source.indexOf('simulateGrokClick(button)', profileIndex);
+
+  assert.notEqual(profileIndex, -1);
+  assert.notEqual(waitIndex, -1);
+  assert.notEqual(buttonIndex, -1);
+  assert.notEqual(clickIndex, -1);
+  assert.ok(waitIndex < buttonIndex);
+  assert.ok(buttonIndex < clickIndex);
+  assert.match(source, /input\[name="cf-turnstile-response"\]/);
+  assert.match(source, /GROK_HUMAN_VERIFICATION_SUCCESS_TIMEOUT_MS = 120 \* 1000/);
+});
+
+test('grok profile runner allows the content script to wait for human verification', async () => {
+  const api = loadGrokRunnerApi();
+  const sendCalls = [];
+  let currentState = {
+    activeFlowId: 'grok',
+    grokRegisterTabId: 303,
+    runtimeState: {
+      flowState: {
+        grok: {
+          session: {
+            registerTabId: 303,
+          },
+        },
+      },
+    },
+  };
+  const runner = api.createGrokRegisterRunner({
+    addLog: async () => {},
+    chrome: {
+      tabs: {
+        get: async (tabId) => ({ id: tabId }),
+        update: async () => {},
+      },
+    },
+    completeNodeFromBackground: async () => {},
+    ensureContentScriptReadyOnTab: async () => {},
+    generatePassword: () => 'StrongPassword123!',
+    generateRandomName: () => ({ firstName: 'Alex', lastName: 'Morgan' }),
+    getState: async () => currentState,
+    getTabId: async () => 303,
+    isTabAlive: async () => true,
+    registerTab: async () => {},
+    sendToContentScriptResilient: async (_sourceId, message, options = {}) => {
+      sendCalls.push({ message, options });
+      return {
+        submitted: true,
+        state: 'profile_submitted',
+        humanVerification: 'turnstile_response',
+        url: 'https://accounts.x.ai/sign-up',
+      };
+    },
+    setPasswordState: async () => {},
+    setState: async (patch) => {
+      currentState = { ...currentState, ...patch };
+    },
+    sleepWithStop: async () => {},
+    waitForTabStableComplete: async () => {},
+  });
+
+  await runner.executeGrokSubmitProfile({ nodeId: 'grok-submit-profile', ...currentState });
+
+  const profileSubmitCall = sendCalls.find(({ message }) => message.nodeId === 'grok-submit-profile');
+  assert.equal(profileSubmitCall.options.timeoutMs, api.GROK_PROFILE_SUBMIT_COMMAND_TIMEOUT_MS);
+  assert.equal(profileSubmitCall.options.timeoutMs, 150 * 1000);
+  assert.match(profileSubmitCall.options.logMessage, /等待人机验证成功/);
+});
+
 test('grok verification runner polls by flow node and submits normalized code', async () => {
   const api = loadGrokRunnerApi();
   const calls = [];

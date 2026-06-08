@@ -45,6 +45,10 @@
     return normalized || fallback;
   }
 
+  function normalizeEmailValue(value = '') {
+    return normalizeString(value);
+  }
+
   function normalizeInteger(value, fallback = 0) {
     const numeric = Math.floor(Number(value));
     return Number.isInteger(numeric) ? numeric : fallback;
@@ -289,6 +293,58 @@
     return buildRuntimeStatePatch(currentState, runtimePatch);
   }
 
+  function resolveCompletionEmail(payload = {}, sessionPatch = {}) {
+    const directEmail = normalizeEmailValue(payload?.email);
+    if (directEmail) {
+      return directEmail;
+    }
+    const identifierType = normalizeString(payload?.accountIdentifierType).toLowerCase();
+    const accountIdentifier = normalizeEmailValue(payload?.accountIdentifier);
+    if (identifierType === 'email' && accountIdentifier) {
+      return accountIdentifier;
+    }
+    return normalizeEmailValue(
+      payload?.runtimeState?.flowState?.kiro?.register?.email
+      || payload?.flowState?.kiro?.register?.email
+      || sessionPatch?.runtimeState?.flowState?.kiro?.register?.email
+    );
+  }
+
+  function buildRegistrationEmailIdentityPatch(currentState = {}, payload = {}, sessionPatch = {}) {
+    const email = resolveCompletionEmail(payload, sessionPatch);
+    if (!email) {
+      return {};
+    }
+    const currentRegistrationState = isPlainObject(currentState?.registrationEmailState)
+      ? currentState.registrationEmailState
+      : {};
+    const payloadRegistrationState = isPlainObject(payload?.registrationEmailState)
+      ? payload.registrationEmailState
+      : {};
+    const source = normalizeString(
+      payloadRegistrationState.source
+      || currentRegistrationState.source
+      || 'step_identity'
+    );
+    return {
+      email,
+      registrationEmailState: {
+        current: email,
+        previous: email,
+        source,
+        updatedAt: Date.now(),
+      },
+      accountIdentifierType: 'email',
+      accountIdentifier: email,
+      phoneNumber: '',
+      signupPhoneNumber: '',
+      signupPhoneActivation: null,
+      signupPhoneCompletedActivation: null,
+      signupPhoneVerificationRequestedAt: null,
+      signupPhoneVerificationPurpose: '',
+    };
+  }
+
   function buildRuntimeResetPatch(currentState = {}, patch = {}) {
     return buildRuntimeStatePatch(currentState, patch);
   }
@@ -402,7 +458,11 @@
   }
 
   function applyNodeCompletionPayload(currentState = {}, payload = {}) {
-    return buildSessionStatePatch(currentState, payload);
+    const sessionPatch = buildSessionStatePatch(currentState, payload);
+    return {
+      ...sessionPatch,
+      ...buildRegistrationEmailIdentityPatch(currentState, payload, sessionPatch),
+    };
   }
 
   function buildFreshKeepState(currentState = {}) {

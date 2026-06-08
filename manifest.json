@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "FlowPilot",
-  "version": "2.7",
-  "version_name": "FlowPilot2.7",
+  "version": "2.8",
+  "version_name": "FlowPilot2.8",
   "description": "用于自动执行多步骤 OAuth 注册流程",
   "permissions": [
     "sidePanel",

@@ -1397,6 +1397,8 @@
       'nexSmsBaseUrl',
       'nexSmsCountryOrder',
       'nexSmsServiceCode',
+      'customUrlSmsPool',
+      'customUrlSmsPoolCursor',
       'phoneVerificationReplacementLimit',
       'phoneCodeWaitSeconds',
       'phoneCodeTimeoutWindows',

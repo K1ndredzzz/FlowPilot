@@ -120,6 +120,57 @@ test('kiro state session patch accepts canonical nested runtime updates', () => 
   assert.equal(patch.runtimeState.flowState.kiro.desktopAuth.status, 'waiting_callback');
 });
 
+test('kiro completion payload syncs register email into shared registration state', () => {
+  const api = loadKiroStateApi();
+  const patch = api.applyNodeCompletionPayload({
+    email: null,
+    accountIdentifierType: 'phone',
+    accountIdentifier: '+15555550123',
+    signupPhoneNumber: '+15555550123',
+    registrationEmailState: {
+      current: '',
+      previous: 'old-user@duck.com',
+      source: 'duck',
+      updatedAt: 42,
+    },
+    runtimeState: api.buildRuntimeStatePatch({}, api.buildDefaultRuntimeState()).runtimeState,
+  }, {
+    runtimeState: {
+      flowState: {
+        kiro: {
+          session: {
+            currentStage: 'register',
+            pageState: 'name_entry',
+          },
+          register: {
+            email: 'fresh-user@duck.com',
+            status: 'waiting_name',
+          },
+        },
+      },
+    },
+    email: 'fresh-user@duck.com',
+    accountIdentifierType: 'email',
+    accountIdentifier: 'fresh-user@duck.com',
+  });
+
+  assert.equal(patch.email, 'fresh-user@duck.com');
+  assert.deepEqual(patch.registrationEmailState, {
+    current: 'fresh-user@duck.com',
+    previous: 'fresh-user@duck.com',
+    source: 'duck',
+    updatedAt: patch.registrationEmailState.updatedAt,
+  });
+  assert.ok(patch.registrationEmailState.updatedAt > 0);
+  assert.equal(patch.accountIdentifierType, 'email');
+  assert.equal(patch.accountIdentifier, 'fresh-user@duck.com');
+  assert.equal(patch.signupPhoneNumber, '');
+  assert.equal(patch.signupPhoneActivation, null);
+  assert.equal(getKiroRuntime(patch).session.pageState, 'name_entry');
+  assert.equal(getKiroRuntime(patch).register.email, 'fresh-user@duck.com');
+  assert.equal(getKiroRuntime(patch).register.status, 'waiting_name');
+});
+
 test('kiro state reset helpers clear downstream runtime and fresh keep-state preserves only target selection', () => {
   const api = loadKiroStateApi();
   const currentState = {

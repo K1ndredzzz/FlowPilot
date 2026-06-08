@@ -772,10 +772,12 @@
     }
 
     function resolveKiroRegisterEmail(currentState = {}, _pageState = {}, fallbackEmail = '') {
+      const runtimeState = readKiroRuntime(currentState);
       return cleanString(
         fallbackEmail
         || currentState?.email
         || currentState?.registrationEmailState?.current
+        || runtimeState?.register?.email
         || currentState?.registrationEmailState?.previous
       ).toLowerCase();
     }

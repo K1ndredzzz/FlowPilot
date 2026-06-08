@@ -7,6 +7,7 @@
   const GROK_VERIFICATION_PAGE_STATE = 'verification_code_entry';
   const GROK_VERIFICATION_READY_TIMEOUT_MS = 90 * 1000;
   const GROK_POST_PROFILE_CF_WAIT_MS = 20 * 1000;
+  const GROK_PROFILE_SUBMIT_COMMAND_TIMEOUT_MS = 150 * 1000;
   const GROK_PRE_SSO_EXTRACT_WAIT_MS = 10 * 1000;
   const MAIL_2925_FILTER_LOOKBACK_MS = 10 * 60 * 1000;
   const GROK_COOKIE_CLEAR_DOMAINS = Object.freeze([
@@ -616,7 +617,8 @@
           password,
         }, {
           step: 4,
-          logMessage: '步骤 4：正在填写 xAI 注册资料...',
+          timeoutMs: GROK_PROFILE_SUBMIT_COMMAND_TIMEOUT_MS,
+          logMessage: '步骤 4：正在填写 xAI 注册资料并等待人机验证成功...',
         });
         await log(`步骤 4：已提交 Grok 注册资料，等待 ${Math.floor(GROK_POST_PROFILE_CF_WAIT_MS / 1000)} 秒完成注册验证...`, 'info', nodeId);
         await sleepWithStop(GROK_POST_PROFILE_CF_WAIT_MS);
@@ -750,6 +752,7 @@
     DEFAULT_GROK_PAGE_TIMEOUT_MS,
     GROK_COOKIE_CLEAR_DOMAINS,
     GROK_POST_PROFILE_CF_WAIT_MS,
+    GROK_PROFILE_SUBMIT_COMMAND_TIMEOUT_MS,
     GROK_PRE_SSO_EXTRACT_WAIT_MS,
     GROK_REGISTER_PAGE_SOURCE_ID,
     GROK_SIGNUP_URL,

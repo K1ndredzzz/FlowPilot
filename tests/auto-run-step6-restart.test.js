@@ -160,6 +160,7 @@ const bundle = [
   extractFunction('runAutoNodeActionWithIdleLogWatchdog'),
   extractFunction('executeNodeAndWaitWithAutoRunIdleLogWatchdog'),
   extractFunction('getDownstreamStateResets'),
+  extractFunction('isEmailSignupPhoneVerificationNode'),
   extractFunction('getPostStep6AutoRestartDecision'),
   NODE_COMPAT_HELPERS,
   extractFunction('getAutoRunWorkflowNodeIds'),
@@ -273,8 +274,9 @@ const AUTO_RUN_STEP_IDLE_RESTART_MAX_ATTEMPTS = 3;
 const AUTO_RUN_STEP_IDLE_RESTART_ERROR_PREFIX = 'AUTO_RUN_STEP_IDLE_RESTART::';
 const AUTO_RUN_TIMER_PARKED_ERROR_PREFIX = 'AUTO_RUN_TIMER_PARKED::';
 const AUTO_RUN_TIMER_KIND_BEFORE_RETRY = 'before_retry';
+const EMAIL_SIGNUP_PHONE_VERIFICATION_RESTART_MAX_ATTEMPTS = 5;
 const GPC_CHECKOUT_RESTART_COOLDOWN_TRIGGER_COUNT = 3;
-const GPC_CHECKOUT_RESTART_COOLDOWN_MS = 5 * 60 * 1000;
+const GPC_CHECKOUT_RESTART_COOLDOWN_MS = 30 * 1000;
 const LOG_PREFIX = '[test]';
 const chrome = {
   tabs: {
@@ -587,6 +589,82 @@ test('auto-run does not restart step 7 when phone verification exhausted replace
   assert.equal(result.events.invalidations.length, 0);
   assert.deepStrictEqual(result.events.steps, [7, 8, 9]);
   assert.ok(!result.events.logs.some(({ message }) => /回到步骤 7 重新开始授权流程/.test(message)));
+});
+
+test('auto-run restarts bound-email phone verification failures up to the email-mode cap', async () => {
+  const emailBoundSteps = {
+    10: { key: 'oauth-login' },
+    11: { key: 'fetch-login-code' },
+    12: { key: 'bind-email' },
+    13: { key: 'fetch-bind-email-code' },
+    14: { key: 'relogin-bound-email' },
+    15: { key: 'fetch-bound-email-login-code' },
+    16: { key: 'post-bound-email-phone-verification' },
+    17: { key: 'confirm-oauth' },
+    18: { key: 'platform-verify' },
+  };
+  const harness = createHarness({
+    startStep: 10,
+    failureStep: 16,
+    failureBudget: 1,
+    failureMessage: '步骤 13：手机号验证失败，当前号码不可用。',
+    authState: { state: 'add_phone_page', url: 'https://auth.openai.com/add-phone' },
+    stepDefinitions: emailBoundSteps,
+    finalOAuthChainStartStep: 10,
+    customState: {
+      stepStatuses: { 3: 'completed' },
+      phoneVerificationEnabled: true,
+    },
+  });
+
+  const events = await harness.run();
+
+  assert.deepStrictEqual(events.steps, [10, 11, 12, 13, 14, 15, 16, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+  assert.equal(events.invalidations.length, 1);
+  assert.deepStrictEqual(events.invalidations[0], {
+    step: 10,
+    options: {
+      logLabel: '节点 post-bound-email-phone-verification 手机号验证失败后准备回到 oauth-login 重试（第 1/5 次重开）',
+    },
+  });
+  assert.ok(events.logs.some(({ message }) => /手机号验证失败，准备回到节点 oauth-login 重新开始授权流程（第 1\/5 次重开）/.test(message)));
+});
+
+test('auto-run stops bound-email phone verification restarts after five attempts', async () => {
+  const emailBoundSteps = {
+    10: { key: 'oauth-login' },
+    11: { key: 'fetch-login-code' },
+    12: { key: 'bind-email' },
+    13: { key: 'fetch-bind-email-code' },
+    14: { key: 'relogin-bound-email' },
+    15: { key: 'fetch-bound-email-login-code' },
+    16: { key: 'post-bound-email-phone-verification' },
+    17: { key: 'confirm-oauth' },
+    18: { key: 'platform-verify' },
+  };
+  const harness = createHarness({
+    startStep: 10,
+    failureStep: 16,
+    failureBudget: 6,
+    failureMessage: '步骤 13：手机号验证失败，当前号码不可用。',
+    authState: { state: 'add_phone_page', url: 'https://auth.openai.com/add-phone' },
+    stepDefinitions: emailBoundSteps,
+    finalOAuthChainStartStep: 10,
+    customState: {
+      stepStatuses: { 3: 'completed' },
+      phoneVerificationEnabled: true,
+    },
+  });
+
+  const result = await harness.runAndCaptureError();
+
+  assert.ok(result?.error);
+  assert.equal(result.events.invalidations.length, 5);
+  assert.ok(result.events.logs.some(({ message, level }) => level === 'error' && /已自动重新开始 5 次，停止继续重试/.test(message)));
+  assert.equal(
+    result.events.logs.filter(({ message }) => /手机号验证失败，准备回到节点 oauth-login 重新开始授权流程/.test(message)).length,
+    5
+  );
 });
 
 
@@ -1092,8 +1170,8 @@ test('auto-run parks current attempt for five minutes after every third GPC chec
   assert.equal(events.timerPlans.length, 1);
   assert.equal(events.timerPlans[0].plan.kind, 'before_retry');
   assert.equal(events.timerPlans[0].plan.mode, 'continue');
-  assert.ok(/5 分钟后继续/.test(events.timerPlans[0].plan.countdownNote));
-  assert.ok(events.logs.some(({ message }) => /已进入 5 分钟冷却/.test(message)));
+  assert.ok(/30 秒后继续/.test(events.timerPlans[0].plan.countdownNote));
+  assert.ok(events.logs.some(({ message }) => /已进入 30 秒冷却/.test(message)));
 });
 
 test('auto-run preserves GPC checkout rebuild count across continue resume before triggering cooldown', async () => {
