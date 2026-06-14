@@ -1415,6 +1415,18 @@ function normalizeSignupCountryLabel(value) {
     .toLowerCase();
 }
 
+function normalizedSignupCountryLabelContains(source, target) {
+  const normalizedSource = normalizeSignupCountryLabel(source);
+  const normalizedTarget = normalizeSignupCountryLabel(target);
+  if (!normalizedSource || !normalizedTarget) {
+    return false;
+  }
+  return normalizedSource === normalizedTarget
+    || normalizedSource.startsWith(`${normalizedTarget} `)
+    || normalizedSource.endsWith(` ${normalizedTarget}`)
+    || normalizedSource.includes(` ${normalizedTarget} `);
+}
+
 function getSignupCountryLabelAliases(value) {
   const phoneCountryUtils = (typeof self !== 'undefined' ? self : globalThis)?.MultiPagePhoneCountryUtils
     || globalThis?.MultiPagePhoneCountryUtils
@@ -1766,11 +1778,7 @@ function doesSignupPhoneCountryTextMatchTarget(text, targetOption, options = {})
   const labels = getSignupPhoneCountryTargetLabels(targetOption, options);
   if (labels.some((label) => (
     label
-    && (
-      normalizedText === label
-      || (label.length > 1 && normalizedText.includes(label))
-      || (normalizedText.length > 2 && label.includes(normalizedText))
-    )
+    && normalizedSignupCountryLabelContains(normalizedText, label)
   ))) {
     return true;
   }
@@ -1832,7 +1840,7 @@ function findSignupPhoneCountryOptionByLabel(phoneInput, countryLabel) {
       return normalizedLabels.some((optionLabel) => normalizedTargets.some((normalizedTarget) => (
           optionLabel.length > 2
           && normalizedTarget.length > 2
-          && (optionLabel.includes(normalizedTarget) || normalizedTarget.includes(optionLabel))
+          && normalizedSignupCountryLabelContains(optionLabel, normalizedTarget)
         )));
     })
     || null;
@@ -2442,9 +2450,7 @@ function resolveSignupPhoneDialCode(phoneInput, options = {}) {
   if (/thailand|泰国/i.test(countryText)) return '66';
   if (/vietnam|越南/i.test(countryText)) return '84';
   if (/england|united kingdom|英国|uk/i.test(countryText)) return '44';
-  const digits = normalizePhoneDigits(phoneNumber);
-  const knownDialCodes = ['66', '84', '61', '44', '1', '81', '82', '86', '852', '855', '856', '60', '62', '63', '65'];
-  return knownDialCodes.find((code) => digits.startsWith(code) && digits.length > code.length) || '';
+  return resolveSignupPhoneDialCodeFromNumber(phoneNumber);
 }
 
 async function waitForSignupPhoneEntryState(options = {}) {
@@ -4340,7 +4346,7 @@ function findLoginPhoneCountryOptionByLabel(select, countryLabel) {
     return normalizedLabels.some((optionLabel) => (
       optionLabel.length > 2
       && normalizedTarget.length > 2
-      && (optionLabel.includes(normalizedTarget) || normalizedTarget.includes(optionLabel))
+      && normalizedSignupCountryLabelContains(optionLabel, normalizedTarget)
     ));
   }) || null;
 }

@@ -35,6 +35,16 @@ test('phone country utils finds country options by phone dial code and country a
   assert.equal(utils.findOptionByCountryLabel(options, 'England'), options[1]);
 });
 
+test('phone country utils does not match shorter country name prefixes', () => {
+  const utils = loadPhoneCountryUtils();
+  const options = [
+    { value: 'NE', textContent: 'Niger (+227)' },
+    { value: 'XX', textContent: 'Nigeria (+234)' },
+  ];
+
+  assert.equal(utils.findOptionByCountryLabel(options, 'Nigeria'), options[1]);
+});
+
 test('phone country utils is loaded before phone auth content scripts', () => {
   const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
   const authScript = manifest.content_scripts.find((entry) => (

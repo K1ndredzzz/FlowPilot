@@ -355,6 +355,7 @@ ${extractFunction('normalizePhoneDigits')}
 ${extractFunction('extractDialCodeFromText')}
 ${extractFunction('dispatchSignupPhoneFieldEvents')}
 ${extractFunction('normalizeSignupCountryLabel')}
+${extractFunction('normalizedSignupCountryLabelContains')}
 ${extractFunction('getSignupCountryLabelAliases')}
 ${extractFunction('getSignupPhoneOptionLabel')}
 ${extractFunction('normalizeSignupCountryOptionValue')}
@@ -507,6 +508,7 @@ ${extractFunction('normalizePhoneDigits')}
 ${extractFunction('extractDialCodeFromText')}
 ${extractFunction('dispatchSignupPhoneFieldEvents')}
 ${extractFunction('normalizeSignupCountryLabel')}
+${extractFunction('normalizedSignupCountryLabelContains')}
 ${extractFunction('getSignupCountryLabelAliases')}
 ${extractFunction('getSignupPhoneOptionLabel')}
 ${extractFunction('normalizeSignupCountryOptionValue')}

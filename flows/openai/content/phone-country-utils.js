@@ -41,6 +41,18 @@
       .toLowerCase();
   }
 
+  function normalizedCountryLabelContains(source, target) {
+    const normalizedSource = normalizeCountryLabel(source);
+    const normalizedTarget = normalizeCountryLabel(target);
+    if (!normalizedSource || !normalizedTarget) {
+      return false;
+    }
+    return normalizedSource === normalizedTarget
+      || normalizedSource.startsWith(`${normalizedTarget} `)
+      || normalizedSource.endsWith(` ${normalizedTarget}`)
+      || normalizedSource.includes(` ${normalizedTarget} `);
+  }
+
   function normalizeCountryOptionValue(value) {
     return String(value || '').trim().toUpperCase();
   }
@@ -170,7 +182,7 @@
         return normalizedLabels.some((optionLabel) => normalizedTargets.some((normalizedTarget) => (
           optionLabel.length > 2
           && normalizedTarget.length > 2
-          && (optionLabel.includes(normalizedTarget) || normalizedTarget.includes(optionLabel))
+          && normalizedCountryLabelContains(optionLabel, normalizedTarget)
         )));
       })
       || null;

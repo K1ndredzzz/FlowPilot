@@ -77,6 +77,18 @@
         .toLowerCase();
     }
 
+    function normalizedCountryLabelContains(source, target) {
+      const normalizedSource = normalizeCountryLabel(source);
+      const normalizedTarget = normalizeCountryLabel(target);
+      if (!normalizedSource || !normalizedTarget) {
+        return false;
+      }
+      return normalizedSource === normalizedTarget
+        || normalizedSource.startsWith(`${normalizedTarget} `)
+        || normalizedSource.endsWith(` ${normalizedTarget}`)
+        || normalizedSource.includes(` ${normalizedTarget} `);
+    }
+
     function getOptionLabel(option) {
       if (typeof phoneCountryUtils.getOptionLabel === 'function') {
         return phoneCountryUtils.getOptionLabel(option);
@@ -319,7 +331,7 @@
           return normalizedLabels.some((optionLabel) => (
             optionLabel.length > 2
             && normalizedTarget.length > 2
-            && (optionLabel.includes(normalizedTarget) || normalizedTarget.includes(optionLabel))
+            && normalizedCountryLabelContains(optionLabel, normalizedTarget)
           ));
         })
         || null;
