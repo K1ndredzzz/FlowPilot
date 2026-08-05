@@ -45,6 +45,7 @@
     "targetSelectorLabel": "来源"
   },
   "baseGroups": [
+    "openai-account-delivery",
     "openai-plus",
     "shared-auto-run",
     "openai-oauth",
@@ -128,7 +129,6 @@
     "plus": {
       "plusModeEnabled": false,
       "plusPaymentMethod": "paypal",
-      "plusAccountAccessStrategy": "oauth",
       "hostedCheckoutVerificationUrl": "",
       "hostedCheckoutPhoneNumber": "",
       "plusHostedCheckoutOauthDelaySeconds": 3
@@ -189,6 +189,34 @@
       "family": "chatgpt-entry-family",
       "driverId": null,
       "cleanupScopes": [],
+      "detectionMatchers": [
+        {
+          "hostnames": [
+            "chatgpt.com",
+            "www.chatgpt.com",
+            "chat.openai.com"
+          ]
+        }
+      ],
+      "familyMatchers": [
+        {
+          "hostnames": [
+            "chatgpt.com",
+            "www.chatgpt.com",
+            "chat.openai.com"
+          ]
+        }
+      ]
+    },
+    "openai-session": {
+      "flowId": "openai",
+      "kind": "flow-page",
+      "label": "ChatGPT 会话",
+      "readyPolicy": "top-frame-only",
+      "family": "openai-session-family",
+      "driverId": "flows/openai/content/chatgpt-session",
+      "cleanupScopes": [],
+      "detectionPriority": 100,
       "detectionMatchers": [
         {
           "hostnames": [
@@ -314,6 +342,17 @@
       "family": "plus-checkout-family",
       "driverId": "flows/openai/content/plus-checkout",
       "cleanupScopes": [],
+      "detectionPriority": 200,
+      "detectionMatchers": [
+        {
+          "hostnames": [
+            "chatgpt.com"
+          ],
+          "pathPrefixes": [
+            "/checkout/"
+          ]
+        }
+      ],
       "familyMatchers": [
         {
           "hostnames": [
@@ -390,6 +429,12 @@
         "plus-checkout-return"
       ]
     },
+    "flows/openai/content/chatgpt-session": {
+      "sourceId": "openai-session",
+      "commands": [
+        "OPENAI_SESSION_GET_CURRENT"
+      ]
+    },
     "flows/openai/content/paypal-flow": {
       "sourceId": "paypal-flow",
       "commands": [
@@ -415,6 +460,13 @@
   },
   "defaultTargetId": "cpa",
   "settingsGroups": {
+    "openai-account-delivery": {
+      "id": "openai-account-delivery",
+      "label": "账号交付",
+      "rowIds": [
+        "row-account-delivery-mode"
+      ]
+    },
     "openai-target-cpa": {
       "id": "openai-target-cpa",
       "label": "CPA 来源",
@@ -472,7 +524,6 @@
       "label": "Plus",
       "rowIds": [
         "row-plus-mode",
-        "row-plus-account-access-strategy",
         "row-plus-payment-method"
       ]
     },
@@ -505,41 +556,65 @@
       "supportsPhoneSignup": true,
       "requiresPhoneSignupWarning": true,
       "usesOauthTimeoutBudget": true,
-      "supportedPlusAccountAccessStrategies": [
+      "supportedAccountDeliveryModes": [
         "oauth",
-        "cpa_codex_session"
-      ]
+        "session"
+      ],
+      "defaultAccountDeliveryMode": "oauth",
+      "accountDeliveryRouteByMode": {
+        "oauth": "oauth",
+        "session": "cpa-session"
+      }
     },
     "sub2api": {
       "supportsPhoneSignup": true,
       "requiresPhoneSignupWarning": false,
-      "supportedPlusAccountAccessStrategies": [
+      "supportedAccountDeliveryModes": [
         "oauth",
-        "sub2api_codex_session"
-      ]
+        "session",
+        "agent_identity"
+      ],
+      "defaultAccountDeliveryMode": "oauth",
+      "accountDeliveryRouteByMode": {
+        "oauth": "oauth",
+        "session": "sub2api-session",
+        "agent_identity": "sub2api-agent-identity"
+      }
     },
     "codex2api": {
       "supportsPhoneSignup": true,
       "requiresPhoneSignupWarning": false,
-      "supportedPlusAccountAccessStrategies": [
+      "supportedAccountDeliveryModes": [
         "oauth"
-      ]
+      ],
+      "defaultAccountDeliveryMode": "oauth",
+      "accountDeliveryRouteByMode": {
+        "oauth": "oauth"
+      }
     },
     "webchat": {
       "supportsPhoneSignup": false,
       "supportsPhoneVerificationSettings": false,
       "requiresPhoneSignupWarning": false,
-      "supportedPlusAccountAccessStrategies": [
-        "oauth"
-      ]
+      "supportedAccountDeliveryModes": [
+        "session"
+      ],
+      "defaultAccountDeliveryMode": "session",
+      "accountDeliveryRouteByMode": {
+        "session": "webchat-session"
+      }
     },
     "chatgpt2api": {
       "supportsPhoneSignup": false,
       "supportsPhoneVerificationSettings": false,
       "requiresPhoneSignupWarning": false,
-      "supportedPlusAccountAccessStrategies": [
-        "oauth"
-      ]
+      "supportedAccountDeliveryModes": [
+        "session"
+      ],
+      "defaultAccountDeliveryMode": "session",
+      "accountDeliveryRouteByMode": {
+        "session": "chatgpt2api-session"
+      }
     }
   }
 });

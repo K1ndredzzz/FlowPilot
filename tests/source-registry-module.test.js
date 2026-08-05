@@ -139,6 +139,13 @@ test('shared source registry exposes canonical Kiro sources and drivers', () => 
   );
   assert.equal(
     registry.detectSourceFromLocation({
+      url: 'https://accounts.x.ai/oauth2/consent?response_type=code',
+      hostname: 'accounts.x.ai',
+    }),
+    'grok-sub2api-oauth-page'
+  );
+  assert.equal(
+    registry.detectSourceFromLocation({
       url: 'https://example.com/',
       hostname: 'example.com',
     }),
@@ -215,4 +222,33 @@ test('shared source registry exposes canonical Kiro sources and drivers', () => 
   assert.equal(registry.driverAcceptsCommand('flows/grok/background/sub2api-oauth-runner', 'grok-start-sub2api-oauth'), true);
   assert.equal(registry.driverAcceptsCommand('flows/openai/background/publisher-webchat', 'openai-upload-session-to-webchat'), true);
   assert.equal(registry.driverAcceptsCommand('flows/openai/background/publisher-chatgpt2api', 'openai-upload-session-to-chatgpt2api'), true);
+});
+
+test('source detection prioritizes Plus checkout before generic OpenAI session pages', () => {
+  const registry = loadSourceRegistry();
+
+  assert.equal(registry.getSourceMeta('plus-checkout').detectionPriority, 200);
+  assert.equal(registry.getSourceMeta('openai-session').detectionPriority, 100);
+  assert.equal(
+    registry.detectSourceFromLocation({
+      url: 'https://chatgpt.com/checkout/openai_llc/cs_test',
+      hostname: 'chatgpt.com',
+    }),
+    'plus-checkout'
+  );
+  assert.equal(
+    registry.detectSourceFromLocation({
+      url: 'https://chatgpt.com/c/abc123',
+      hostname: 'chatgpt.com',
+    }),
+    'openai-session'
+  );
+  assert.equal(
+    registry.detectSourceFromLocation({
+      url: 'https://chat.openai.com/',
+      hostname: 'chat.openai.com',
+    }),
+    'openai-session'
+  );
+  assert.equal(registry.driverAcceptsCommand('openai-session', 'OPENAI_SESSION_GET_CURRENT'), true);
 });

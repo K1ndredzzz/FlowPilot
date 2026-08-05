@@ -46,15 +46,15 @@ test('flow registry exposes canonical flow and target metadata', () => {
   assert.equal(flowRegistry.normalizeTargetId('grok', 'anything-else'), 'webchat2api');
   assert.deepEqual(
     flowRegistry.getVisibleGroupIds('openai', 'cpa'),
-    ['openai-plus', 'shared-auto-run', 'openai-oauth', 'openai-step6', 'openai-phone', 'openai-target-cpa', 'service-account', 'service-email', 'service-proxy']
+    ['openai-account-delivery', 'openai-plus', 'shared-auto-run', 'openai-oauth', 'openai-step6', 'openai-phone', 'openai-target-cpa', 'service-account', 'service-email', 'service-proxy']
   );
   assert.deepEqual(
     flowRegistry.getVisibleGroupIds('openai', 'webchat'),
-    ['openai-plus', 'shared-auto-run', 'openai-oauth', 'openai-step6', 'openai-target-webchat', 'service-account', 'service-email', 'service-proxy']
+    ['openai-account-delivery', 'openai-plus', 'shared-auto-run', 'openai-oauth', 'openai-step6', 'openai-target-webchat', 'service-account', 'service-email', 'service-proxy']
   );
   assert.deepEqual(
     flowRegistry.getVisibleGroupIds('openai', 'chatgpt2api'),
-    ['openai-plus', 'shared-auto-run', 'openai-oauth', 'openai-step6', 'openai-target-chatgpt2api', 'service-account', 'service-email', 'service-proxy']
+    ['openai-account-delivery', 'openai-plus', 'shared-auto-run', 'openai-oauth', 'openai-step6', 'openai-target-chatgpt2api', 'service-account', 'service-email', 'service-proxy']
   );
   assert.deepEqual(
     flowRegistry.getVisibleGroupIds('kiro', 'kiro-rs'),
@@ -120,8 +120,12 @@ test('flow registry exposes canonical flow and target metadata', () => {
     false
   );
   assert.deepEqual(
+    flowRegistry.getSettingsGroupDefinition('openai-account-delivery')?.rowIds,
+    ['row-account-delivery-mode']
+  );
+  assert.deepEqual(
     flowRegistry.getSettingsGroupDefinition('openai-plus')?.rowIds,
-    ['row-plus-mode', 'row-plus-account-access-strategy', 'row-plus-payment-method']
+    ['row-plus-mode', 'row-plus-payment-method']
   );
   assert.deepEqual(
     flowRegistry.getSettingsGroupDefinition('shared-auto-run')?.rowIds,
@@ -158,7 +162,6 @@ test('settings schema normalizes view input into canonical nested namespaces', (
     ipProxyEnabled: true,
     ipProxyService: '711proxy',
     customPassword: 'SharedSecret123!',
-    plusAccountAccessStrategy: 'sub2api_codex_session',
     kiroRsUrl: 'https://kiro.example.com/admin',
     kiroRsKey: 'secret-key',
     openaiWebchatUrl: ' https://webchat.example.com/admin ',
@@ -178,7 +181,17 @@ test('settings schema normalizes view input into canonical nested namespaces', (
   assert.equal(normalized.services.proxy.enabled, true);
   assert.equal(normalized.services.account.customPassword, 'SharedSecret123!');
   assert.equal(normalized.flows.openai.selectedTargetId, 'cpa');
-  assert.equal(normalized.flows.openai.plus.plusAccountAccessStrategy, 'sub2api_codex_session');
+  assert.equal(normalized.flows.openai.targets.cpa.accountDeliveryMode, 'oauth');
+  assert.deepEqual(
+    Object.keys(normalized.flows.openai.plus).sort(),
+    [
+      'hostedCheckoutPhoneNumber',
+      'hostedCheckoutVerificationUrl',
+      'plusHostedCheckoutOauthDelaySeconds',
+      'plusModeEnabled',
+      'plusPaymentMethod',
+    ].sort()
+  );
   assert.equal(normalized.flows.openai.targets.webchat.baseUrl, 'https://webchat.example.com/admin');
   assert.equal(normalized.flows.openai.targets.webchat.apiKey, 'webchat-key');
   assert.equal(normalized.flows.openai.targets.chatgpt2api.baseUrl, 'https://chatgpt2api.example.com/admin');
@@ -460,7 +473,6 @@ test('settings schema can project canonical state into a read view without legac
     openaiWebchatUploadEnabled: true,
     openaiChatgpt2ApiUrl: 'https://chatgpt2api.example.com/admin',
     openaiChatgpt2ApiAdminKey: 'key-chatgpt2api',
-    plusAccountAccessStrategy: 'sub2api_codex_session',
   });
   const view = schema.buildSettingsView(normalized);
 
@@ -473,26 +485,14 @@ test('settings schema can project canonical state into a read view without legac
   assert.equal(view.openaiWebchatUploadEnabled, false);
   assert.equal(view.openaiChatgpt2ApiUrl, 'https://chatgpt2api.example.com/admin');
   assert.equal(view.openaiChatgpt2ApiAdminKey, 'key-chatgpt2api');
-  assert.equal(view.plusAccountAccessStrategy, 'sub2api_codex_session');
-  assert.equal(view.settingsSchemaVersion, 5);
+  assert.equal(view.accountDeliveryMode, 'oauth');
+  assert.equal(view.settingsSchemaVersion, 6);
   assert.equal(view.settingsState.activeFlowId, 'kiro');
   assert.deepEqual(view.stepExecutionRangeByFlow.grok, {
     enabled: false,
     fromStep: 1,
     toStep: 6,
   });
-});
-
-test('settings schema preserves CPA session strategy in canonical state and read view', () => {
-  const { settingsSchema } = loadApis();
-  const schema = settingsSchema.createSettingsSchema();
-  const normalized = schema.normalizeSettingsState({
-    plusAccountAccessStrategy: 'cpa_codex_session',
-  });
-  const view = schema.buildSettingsView(normalized);
-
-  assert.equal(normalized.flows.openai.plus.plusAccountAccessStrategy, 'cpa_codex_session');
-  assert.equal(view.plusAccountAccessStrategy, 'cpa_codex_session');
 });
 
 test('settings schema preserves registered custom flow settings without openai/kiro hardcoding', () => {

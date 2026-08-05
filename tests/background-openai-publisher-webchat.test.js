@@ -125,6 +125,8 @@ test('OpenAI webchat executor reads latest state and writes upload status withou
   const logs = [];
   const broadcasts = [];
   const completed = [];
+  const sessionReadCalls = [];
+  const stepResolutionCalls = [];
   let liveState = {
     openaiWebchatUrl: '',
     openaiWebchatAdminKey: '',
@@ -146,14 +148,17 @@ test('OpenAI webchat executor reads latest state and writes upload status withou
     broadcastDataUpdate: (updates) => broadcasts.push(updates),
     completeNodeFromBackground: async (nodeId, payload) => completed.push({ nodeId, payload }),
     createOpenAiSessionReader: () => ({
-      readCurrentSessionFromState: async () => ({
-        session: {
+      readCurrentSessionFromState: async (state, options) => {
+        sessionReadCalls.push({ state, options });
+        return {
+          session: {
+            accessToken: 'live-session-token',
+            user: { email: 'flow@example.com' },
+          },
           accessToken: 'live-session-token',
-          user: { email: 'flow@example.com' },
-        },
-        accessToken: 'live-session-token',
-        tabId: 91,
-      }),
+          tabId: 91,
+        };
+      },
     }),
     fetchImpl: async (url, options = {}) => {
       requests.push({
@@ -163,24 +168,38 @@ test('OpenAI webchat executor reads latest state and writes upload status withou
       });
       return createJsonResponse({ code: 0, message: 'uploaded' });
     },
+    getStepIdByKeyForState: (stepKey, state) => {
+      stepResolutionCalls.push({ stepKey, state });
+      return 7;
+    },
     getState: async () => ({ ...liveState }),
     setState: async (updates = {}) => {
       liveState = { ...liveState, ...updates };
     },
   });
 
-  await publisher.executeOpenAiUploadSessionToWebchat({
+  const executionState = {
     nodeId: 'openai-upload-session-to-webchat',
-    visibleStep: 12,
     openaiWebchatAdminKey: 'stale-key',
-  });
+  };
+  await publisher.executeOpenAiUploadSessionToWebchat(executionState);
 
+  assert.deepEqual(stepResolutionCalls, [{
+    stepKey: 'openai-upload-session-to-webchat',
+    state: executionState,
+  }]);
   assert.equal(requests.length, 1);
   assert.equal(requests[0].url, 'https://remote.example.com/api/remote-account/inject');
   assert.equal(requests[0].authorization, 'Bearer live-admin-key');
   assert.equal(requests[0].body.provider, 'gpt');
   assert.equal(requests[0].body.accounts[0].provider, 'gpt');
   assert.equal(requests[0].body.accounts[0].access_token, 'live-session-token');
+  assert.equal(sessionReadCalls.length, 1);
+  assert.deepEqual(sessionReadCalls[0].options, {
+    visibleStep: 7,
+    targetLabel: 'webchat',
+    requiredFields: ['session'],
+  });
   assert.equal(completed.length, 1);
   assert.equal(completed[0].nodeId, 'openai-upload-session-to-webchat');
   assert.equal(completed[0].payload.openaiWebchatUploadStatus, 'uploaded');
@@ -229,7 +248,10 @@ test('OpenAI webchat executor can use shared Grok webchat2api config', async () 
     },
   });
 
-  await publisher.executeOpenAiUploadSessionToWebchat({ nodeId: 'openai-upload-session-to-webchat' });
+  await publisher.executeOpenAiUploadSessionToWebchat({
+    nodeId: 'openai-upload-session-to-webchat',
+    visibleStep: 7,
+  });
 
   assert.equal(requests.length, 1);
   assert.equal(requests[0].url, 'https://shared.example.com/api/remote-account/inject');
@@ -275,7 +297,10 @@ test('OpenAI webchat executor persists failure state without completing or leaki
   });
 
   await assert.rejects(
-    () => publisher.executeOpenAiUploadSessionToWebchat({ nodeId: 'openai-upload-session-to-webchat' }),
+    () => publisher.executeOpenAiUploadSessionToWebchat({
+      nodeId: 'openai-upload-session-to-webchat',
+      visibleStep: 7,
+    }),
     /webchat 会话上传失败：invalid admin key/
   );
 

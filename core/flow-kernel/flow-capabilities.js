@@ -2,6 +2,7 @@
   root.MultiPageFlowCapabilities = factory();
 })(typeof self !== 'undefined' ? self : globalThis, function createFlowCapabilitiesModule() {
   const rootScope = typeof self !== 'undefined' ? self : globalThis;
+  const accountDeliveryApi = rootScope.MultiPageOpenAiAccountDelivery || {};
   const flowRegistryApi = rootScope.MultiPageFlowRegistry || {};
   const contributionRegistryApi = rootScope.MultiPageContributionRegistry || {};
   const settingsSchemaApi = rootScope.MultiPageSettingsSchema || {};
@@ -9,9 +10,15 @@
   const DEFAULT_OPENAI_TARGET_ID = flowRegistryApi.DEFAULT_OPENAI_TARGET_ID || 'cpa';
   const SIGNUP_METHOD_EMAIL = 'email';
   const SIGNUP_METHOD_PHONE = 'phone';
-  const PLUS_ACCOUNT_ACCESS_STRATEGY_OAUTH = 'oauth';
-  const PLUS_ACCOUNT_ACCESS_STRATEGY_SUB2API_CODEX_SESSION = 'sub2api_codex_session';
-  const PLUS_ACCOUNT_ACCESS_STRATEGY_CPA_CODEX_SESSION = 'cpa_codex_session';
+  const ACCOUNT_DELIVERY_MODE_OAUTH = accountDeliveryApi.ACCOUNT_DELIVERY_MODE_OAUTH || 'oauth';
+  const ACCOUNT_DELIVERY_MODE_SESSION = accountDeliveryApi.ACCOUNT_DELIVERY_MODE_SESSION || 'session';
+  const ACCOUNT_DELIVERY_MODE_AGENT_IDENTITY = accountDeliveryApi.ACCOUNT_DELIVERY_MODE_AGENT_IDENTITY || 'agent_identity';
+  const ACCOUNT_DELIVERY_MODE_IDS = Object.freeze([
+    ACCOUNT_DELIVERY_MODE_OAUTH,
+    ACCOUNT_DELIVERY_MODE_SESSION,
+    ACCOUNT_DELIVERY_MODE_AGENT_IDENTITY,
+  ]);
+  const ACCOUNT_DELIVERY_MODE_ID_SET = new Set(ACCOUNT_DELIVERY_MODE_IDS);
   const VALID_OPENAI_TARGET_IDS = typeof flowRegistryApi.getTargetDefinitions === 'function'
     ? Object.keys(flowRegistryApi.getTargetDefinitions('openai') || {})
     : (Array.isArray(flowRegistryApi.OPENAI_TARGET_IDS)
@@ -60,7 +67,11 @@
     supportsPhoneVerificationSettings: true,
     requiresPhoneSignupWarning: false,
     usesOauthTimeoutBudget: false,
-    supportedPlusAccountAccessStrategies: Object.freeze([PLUS_ACCOUNT_ACCESS_STRATEGY_OAUTH]),
+    supportedAccountDeliveryModes: Object.freeze([ACCOUNT_DELIVERY_MODE_OAUTH]),
+    defaultAccountDeliveryMode: ACCOUNT_DELIVERY_MODE_OAUTH,
+    accountDeliveryRouteByMode: Object.freeze({
+      [ACCOUNT_DELIVERY_MODE_OAUTH]: 'oauth',
+    }),
   });
 
   const MODE_SWITCH_RELEVANT_KEYS = Object.freeze([
@@ -69,7 +80,7 @@
     'phoneVerificationEnabled',
     'plusModeEnabled',
     'signupMethod',
-    'plusAccountAccessStrategy',
+    'accountDeliveryMode',
     'targetId',
   ]);
   const OPENAI_WEBCHAT_RELEVANT_KEYS = Object.freeze([
@@ -126,37 +137,45 @@
       : SIGNUP_METHOD_EMAIL;
   }
 
-  function normalizePlusAccountAccessStrategy(value = '') {
+  function normalizeAccountDeliveryMode(value = '', fallback = ACCOUNT_DELIVERY_MODE_OAUTH) {
+    if (typeof accountDeliveryApi.normalizeAccountDeliveryMode === 'function') {
+      return accountDeliveryApi.normalizeAccountDeliveryMode(value, fallback);
+    }
     const normalized = String(value || '').trim().toLowerCase();
-    if (normalized === PLUS_ACCOUNT_ACCESS_STRATEGY_SUB2API_CODEX_SESSION) {
-      return PLUS_ACCOUNT_ACCESS_STRATEGY_SUB2API_CODEX_SESSION;
+    if (ACCOUNT_DELIVERY_MODE_ID_SET.has(normalized)) {
+      return normalized;
     }
-    if (normalized === PLUS_ACCOUNT_ACCESS_STRATEGY_CPA_CODEX_SESSION) {
-      return PLUS_ACCOUNT_ACCESS_STRATEGY_CPA_CODEX_SESSION;
-    }
-    return PLUS_ACCOUNT_ACCESS_STRATEGY_OAUTH;
+    const normalizedFallback = String(fallback || '').trim().toLowerCase();
+    return ACCOUNT_DELIVERY_MODE_ID_SET.has(normalizedFallback)
+      ? normalizedFallback
+      : ACCOUNT_DELIVERY_MODE_OAUTH;
   }
 
-  function getPlusAccountSessionStrategyForTarget(targetId = '') {
-    const normalizedTargetId = String(targetId || '').trim().toLowerCase();
-    if (normalizedTargetId === 'sub2api') {
-      return PLUS_ACCOUNT_ACCESS_STRATEGY_SUB2API_CODEX_SESSION;
+  function normalizeAccountDeliveryModeList(values = [], fallback = [ACCOUNT_DELIVERY_MODE_OAUTH]) {
+    const source = Array.isArray(values) ? values : [];
+    const seen = new Set();
+    const normalized = [];
+    source.forEach((value) => {
+      const modeId = String(value || '').trim().toLowerCase();
+      if (!ACCOUNT_DELIVERY_MODE_ID_SET.has(modeId) || seen.has(modeId)) {
+        return;
+      }
+      seen.add(modeId);
+      normalized.push(modeId);
+    });
+    if (normalized.length) {
+      return normalized;
     }
-    if (normalizedTargetId === 'cpa') {
-      return PLUS_ACCOUNT_ACCESS_STRATEGY_CPA_CODEX_SESSION;
-    }
-    return PLUS_ACCOUNT_ACCESS_STRATEGY_OAUTH;
-  }
-
-  function normalizePlusAccountAccessStrategyForTarget(value = '', targetId = '') {
-    const normalizedStrategy = normalizePlusAccountAccessStrategy(value);
-    if (
-      normalizedStrategy === PLUS_ACCOUNT_ACCESS_STRATEGY_SUB2API_CODEX_SESSION
-      || normalizedStrategy === PLUS_ACCOUNT_ACCESS_STRATEGY_CPA_CODEX_SESSION
-    ) {
-      return getPlusAccountSessionStrategyForTarget(targetId);
-    }
-    return normalizedStrategy;
+    const fallbackValues = Array.isArray(fallback) ? fallback : [];
+    fallbackValues.forEach((value) => {
+      const modeId = String(value || '').trim().toLowerCase();
+      if (!ACCOUNT_DELIVERY_MODE_ID_SET.has(modeId) || seen.has(modeId)) {
+        return;
+      }
+      seen.add(modeId);
+      normalized.push(modeId);
+    });
+    return normalized.length ? normalized : [ACCOUNT_DELIVERY_MODE_OAUTH];
   }
 
   function normalizeOpenAiTargetList(values = []) {
@@ -522,37 +541,49 @@
         : (effectiveSignupMethods.includes(SIGNUP_METHOD_EMAIL)
           ? SIGNUP_METHOD_EMAIL
           : effectiveSignupMethods[0]);
-      const requestedPlusAccountAccessStrategy = normalizePlusAccountAccessStrategyForTarget(
-        options?.plusAccountAccessStrategy ?? state?.plusAccountAccessStrategy,
-        effectiveTargetId
+      const openAiFlowSettings = activeFlowId === 'openai'
+        ? getOpenAiFlowSettingsFromState(state)
+        : {};
+      const targetAccountDeliveryModes = normalizeAccountDeliveryModeList(
+        targetState.supportedAccountDeliveryModes,
+        [ACCOUNT_DELIVERY_MODE_OAUTH]
       );
-      const targetPlusAccountAccessStrategies = (Array.isArray(targetState.supportedPlusAccountAccessStrategies)
-        && targetState.supportedPlusAccountAccessStrategies.length > 0
-        ? targetState.supportedPlusAccountAccessStrategies
-        : [PLUS_ACCOUNT_ACCESS_STRATEGY_OAUTH])
-        .map(normalizePlusAccountAccessStrategy)
-        .filter((strategy, index, strategies) => strategy && strategies.indexOf(strategy) === index);
-      const availablePlusAccountAccessStrategies = activeFlowId === 'openai'
-        && Boolean(flowState.supportsPlusMode)
-        && Boolean(runtimeLocks.plusModeEnabled)
-        && effectiveSignupMethod === SIGNUP_METHOD_EMAIL
+      const defaultAccountDeliveryMode = targetAccountDeliveryModes.includes(
+        normalizeAccountDeliveryMode(targetState.defaultAccountDeliveryMode, targetAccountDeliveryModes[0])
+      )
+        ? normalizeAccountDeliveryMode(targetState.defaultAccountDeliveryMode, targetAccountDeliveryModes[0])
+        : targetAccountDeliveryModes[0];
+      const requestedAccountDeliveryMode = normalizeAccountDeliveryMode(
+        options?.accountDeliveryMode
+        ?? state?.settingsState?.flows?.openai?.targets?.[effectiveTargetId]?.accountDeliveryMode
+        ?? state?.flows?.openai?.targets?.[effectiveTargetId]?.accountDeliveryMode
+        ?? state?.accountDeliveryMode
+        ?? openAiFlowSettings?.targets?.[effectiveTargetId]?.accountDeliveryMode,
+        defaultAccountDeliveryMode
+      );
+      const availableAccountDeliveryModes = activeFlowId === 'openai'
         ? (runtimeLocks.accountContribution
-          ? [PLUS_ACCOUNT_ACCESS_STRATEGY_SUB2API_CODEX_SESSION]
-          : targetPlusAccountAccessStrategies)
-        : [PLUS_ACCOUNT_ACCESS_STRATEGY_OAUTH];
-      const effectivePlusAccountAccessStrategy = runtimeLocks.accountContribution
-        && runtimeLocks.plusModeEnabled
-        && effectiveSignupMethod === SIGNUP_METHOD_EMAIL
-        ? PLUS_ACCOUNT_ACCESS_STRATEGY_SUB2API_CODEX_SESSION
-        : availablePlusAccountAccessStrategies.includes(requestedPlusAccountAccessStrategy)
-        ? requestedPlusAccountAccessStrategy
-        : PLUS_ACCOUNT_ACCESS_STRATEGY_OAUTH;
-      const canEditPlusAccountAccessStrategy = activeFlowId === 'openai'
-        && Boolean(flowState.supportsPlusMode)
-        && Boolean(runtimeLocks.plusModeEnabled)
-        && effectiveSignupMethod === SIGNUP_METHOD_EMAIL
+          ? [ACCOUNT_DELIVERY_MODE_OAUTH]
+          : targetAccountDeliveryModes)
+        : [ACCOUNT_DELIVERY_MODE_OAUTH];
+      const effectiveAccountDeliveryMode = availableAccountDeliveryModes.includes(requestedAccountDeliveryMode)
+        ? requestedAccountDeliveryMode
+        : (availableAccountDeliveryModes.includes(defaultAccountDeliveryMode)
+          ? defaultAccountDeliveryMode
+          : availableAccountDeliveryModes[0]);
+      const accountDeliveryRouteByMode = isPlainObject(targetState.accountDeliveryRouteByMode)
+        ? targetState.accountDeliveryRouteByMode
+        : DEFAULT_TARGET_CAPABILITIES.accountDeliveryRouteByMode;
+      const effectiveAccountDeliveryRouteId = cleanString(
+        accountDeliveryRouteByMode[effectiveAccountDeliveryMode]
+        || (effectiveAccountDeliveryMode === ACCOUNT_DELIVERY_MODE_OAUTH ? 'oauth' : '')
+      );
+      const canShowAccountDeliveryControl = activeFlowId === 'openai'
         && !runtimeLocks.accountContribution
-        && availablePlusAccountAccessStrategies.length > 1;
+        && availableAccountDeliveryModes.length > 1;
+      const canEditAccountDeliveryMode = canShowAccountDeliveryControl
+        && !runtimeLocks.autoRunLocked
+        && !runtimeLocks.settingsMenuLocked;
       const visibleGroupIds = typeof flowRegistryApi.getVisibleGroupIds === 'function'
         && isRegisteredFlowId(activeFlowId)
         ? flowRegistryApi.getVisibleGroupIds(activeFlowId, effectiveTargetId)
@@ -592,11 +623,13 @@
         canShowPhoneSettings,
         canShowPlusSettings: activeFlowId === 'openai' && Boolean(flowState.supportsPlusMode),
         canSwitchFlow: Boolean(flowState.canSwitchFlow),
-        canEditPlusAccountAccessStrategy,
+        canEditAccountDeliveryMode,
+        canShowAccountDeliveryControl,
         canSelectPhoneSignup: canSelectPhoneSignup,
         canUsePhoneSignup: canSelectPhoneSignup,
         canUseSelectedTarget: targetSupported,
-        effectivePlusAccountAccessStrategy,
+        effectiveAccountDeliveryMode,
+        effectiveAccountDeliveryRouteId,
         effectiveSignupMethod,
         effectiveSignupMethods,
         effectiveTargetId,
@@ -605,17 +638,18 @@
         openaiWebchat,
         grok2Api,
         panelCapabilities: targetState,
-        requestedPlusAccountAccessStrategy,
+        requestedAccountDeliveryMode,
         requestedSignupMethod,
         requestedTargetId,
         runtimeLocks,
-        availablePlusAccountAccessStrategies,
+        availableAccountDeliveryModes,
         shouldWarnCpaPhoneSignup: effectiveSignupMethod === SIGNUP_METHOD_PHONE
           && Boolean(targetState.requiresPhoneSignupWarning),
         stepDefinitionOptions: {
           activeFlowId,
+          accountDeliveryMode: effectiveAccountDeliveryMode,
+          accountDeliveryRouteId: effectiveAccountDeliveryRouteId,
           targetId: effectiveTargetId,
-          plusAccountAccessStrategy: effectivePlusAccountAccessStrategy,
           plusModeEnabled: runtimeLocks.plusModeEnabled,
           phoneVerificationEnabled: runtimeLocks.phoneVerificationEnabled,
           openaiChatgpt2ApiUploadEnabled: openaiChatgpt2Api.uploadRequired,
@@ -768,6 +802,18 @@
         });
       }
 
+      if (
+        capabilityState.activeFlowId === 'openai'
+        && changedKeySet.has('accountDeliveryMode')
+        && capabilityState.requestedAccountDeliveryMode !== capabilityState.effectiveAccountDeliveryMode
+      ) {
+        normalizedUpdates.accountDeliveryMode = capabilityState.effectiveAccountDeliveryMode;
+        errors.push({
+          code: 'account_delivery_mode_unsupported',
+          message: `当前来源 ${getTargetLabel(capabilityState.activeFlowId, capabilityState.effectiveTargetId)} 不支持所选账号交付方式。`,
+        });
+      }
+
       if (changedKeySet.has('plusModeEnabled') && Boolean(state?.plusModeEnabled) && !flowState.supportsPlusMode) {
         normalizedUpdates.plusModeEnabled = false;
         errors.push({
@@ -844,7 +890,6 @@
       getOpenAiTargetCapabilities,
       normalizeFlowId,
       normalizeOpenAiTargetId,
-      normalizePlusAccountAccessStrategy,
       normalizeSignupMethod,
       resolveSidepanelCapabilities,
       resolveSignupMethod,
@@ -861,15 +906,16 @@
     DEFAULT_OPENAI_TARGET_ID,
     FLOW_CAPABILITIES,
     OPENAI_TARGET_CAPABILITIES,
-    PLUS_ACCOUNT_ACCESS_STRATEGY_OAUTH,
-    PLUS_ACCOUNT_ACCESS_STRATEGY_SUB2API_CODEX_SESSION,
-    PLUS_ACCOUNT_ACCESS_STRATEGY_CPA_CODEX_SESSION,
+    ACCOUNT_DELIVERY_MODE_AGENT_IDENTITY,
+    ACCOUNT_DELIVERY_MODE_IDS,
+    ACCOUNT_DELIVERY_MODE_OAUTH,
+    ACCOUNT_DELIVERY_MODE_SESSION,
     SIGNUP_METHOD_EMAIL,
     SIGNUP_METHOD_PHONE,
     VALID_OPENAI_TARGET_IDS,
     normalizeFlowId,
+    normalizeAccountDeliveryMode,
     normalizeOpenAiTargetId,
-    normalizePlusAccountAccessStrategy,
     normalizeSignupMethod,
   };
 });
