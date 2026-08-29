@@ -1320,7 +1320,7 @@
 
     function isAuthContentScriptUnreachableError(error) {
       const message = String(error?.message || error || '').trim();
-      return /Receiving end does not exist|Could not establish connection|Frame with ID \d+ is showing error page|等待认证页状态检查超时/i.test(message);
+      return /Receiving end does not exist|Could not establish connection|Frame with ID \d+ is showing error page|Content script .* did not respond|Try refreshing the tab and retry|等待认证页状态检查超时/i.test(message);
     }
 
     function buildPhoneRestartStep7Error(phoneNumber = '') {
@@ -1435,6 +1435,26 @@
           DEFAULT_HERO_SMS_OPERATOR
         );
         return mergedState;
+      } catch (_) {
+        return state || {};
+      }
+    }
+
+    // Phone order cleanup can happen after SMS polling changed persistent settings.
+    // Keep the caller snapshot as a fallback, but always prefer the latest runtime state.
+    async function readLatestPhoneRuntimeState(state = {}) {
+      if (typeof getState !== 'function') {
+        return state || {};
+      }
+      try {
+        const latestState = await getState();
+        if (!latestState || typeof latestState !== 'object') {
+          return state || {};
+        }
+        return {
+          ...(state || {}),
+          ...latestState,
+        };
       } catch (_) {
         return state || {};
       }
@@ -1653,7 +1673,8 @@
     }
 
     async function completePhoneActivation(state = {}, activation) {
-      if (shouldSkipTerminalStatusForFreeReuse(state, activation)) {
+      const latestState = await readLatestPhoneRuntimeState(state);
+      if (shouldSkipTerminalStatusForFreeReuse(latestState, activation)) {
         const normalizedActivation = normalizeActivation(activation);
         const identifier = normalizedActivation?.phoneNumber || normalizedActivation?.activationId || 'current activation';
         await addLog(
@@ -1666,7 +1687,7 @@
       if (!normalizedActivation) {
         return;
       }
-      const scopedState = scopeStateToActivationProvider(state, normalizedActivation);
+      const scopedState = scopeStateToActivationProvider(latestState, normalizedActivation);
       const provider = getActivationProviderAdapterForState(scopedState, normalizedActivation);
       if (typeof provider?.finishActivation !== 'function') {
         throw new Error(`${getPhoneSmsProviderLabel(getActivationProviderId(normalizedActivation, state))} 不支持完成接码订单。`);
@@ -1677,7 +1698,8 @@
     async function cancelPhoneActivation(state = {}, activation) {
       try {
         const normalizedActivation = normalizeActivation(activation);
-        if (shouldSkipTerminalStatusForFreeReuse(state, activation)) {
+        const latestState = await readLatestPhoneRuntimeState(state);
+        if (shouldSkipTerminalStatusForFreeReuse(latestState, activation)) {
           const identifier = normalizedActivation?.phoneNumber || normalizedActivation?.activationId || 'current activation';
           await addLog(
             `步骤 9：白嫖复用模式仅请求短信，跳过 ${identifier} 的接码取消状态。`,
@@ -1688,7 +1710,7 @@
         if (!normalizedActivation) {
           return;
         }
-        const scopedState = scopeStateToActivationProvider(state, normalizedActivation);
+        const scopedState = scopeStateToActivationProvider(latestState, normalizedActivation);
         const provider = getActivationProviderAdapterForState(scopedState, normalizedActivation);
         if (typeof provider?.cancelActivation === 'function') {
           await provider.cancelActivation(scopedState, normalizedActivation);
@@ -1772,7 +1794,8 @@
 
     async function banPhoneActivation(state = {}, activation) {
       try {
-        if (shouldSkipTerminalStatusForFreeReuse(state, activation)) {
+        const latestState = await readLatestPhoneRuntimeState(state);
+        if (shouldSkipTerminalStatusForFreeReuse(latestState, activation)) {
           const normalizedActivation = normalizeActivation(activation);
           const identifier = normalizedActivation?.phoneNumber || normalizedActivation?.activationId || 'current activation';
           await addLog(
@@ -1785,7 +1808,7 @@
         if (!normalizedActivation) {
           return;
         }
-        const scopedState = scopeStateToActivationProvider(state, normalizedActivation);
+        const scopedState = scopeStateToActivationProvider(latestState, normalizedActivation);
         const provider = getActivationProviderAdapterForState(scopedState, normalizedActivation);
         if (typeof provider?.banActivation === 'function') {
           await provider.banActivation(scopedState, normalizedActivation);
@@ -3298,9 +3321,12 @@
     }
 
     async function cancelSignupPhoneActivation(state = {}, activation = null) {
-      const normalizedActivation = normalizeActivation(activation || state?.signupPhoneActivation);
+      const latestState = await readLatestPhoneRuntimeState(state);
+      const normalizedActivation = normalizeActivation(activation)
+        || normalizeActivation(latestState?.signupPhoneActivation)
+        || normalizeActivation(state?.signupPhoneActivation);
       if (normalizedActivation) {
-        await cancelPhoneActivation(state, normalizedActivation);
+        await cancelPhoneActivation(latestState, normalizedActivation);
       }
       await clearSignupPhoneRuntimeState();
     }
@@ -3956,6 +3982,7 @@
         if (!normalizedActivation) {
           return { handled: false, nextActivation: null };
         }
+        state = await readLatestPhoneRuntimeState(state);
         const scopedState = scopeStateToActivationProvider(state, normalizedActivation);
         const provider = getActivationProviderAdapterForState(scopedState, normalizedActivation);
         if (!provider || typeof provider.rotateActivation !== 'function') {
