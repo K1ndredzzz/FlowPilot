@@ -211,7 +211,6 @@ const latestState = {
   targetId: 'cpa',
   signupMethod: 'phone',
   accountContributionEnabled: false,
-  phoneVerificationEnabled: true,
 };
 const inputAutoSkipFailures = { checked: false };
 const inputContributionNickname = { value: 'tester' };
@@ -219,7 +218,6 @@ const inputContributionQq = { value: '123456' };
 const inputAutoSkipFailuresThreadIntervalMinutes = { value: '5' };
 const btnAutoRun = { disabled: false, innerHTML: '' };
 const inputRunCount = { disabled: false, value: '1' };
-const inputPhoneVerificationEnabled = { checked: true };
 const inputPlusModeEnabled = { checked: false };
 let runCountValue = 1;
 let pendingAutoRunStartTotalRuns = 0;

@@ -53,13 +53,13 @@ function extractFunction(name) {
   return sidepanelSource.slice(start, end);
 }
 
-test('sidepanel html exposes phone verification toggle and multi-provider SMS rows', () => {
+test('sidepanel html exposes mandatory phone verification settings and multi-provider SMS rows', () => {
   const html = fs.readFileSync('sidepanel/sidepanel.html', 'utf8');
 
-  assert.match(html, /id="row-phone-verification-enabled"/);
-  assert.match(html, /id="btn-toggle-phone-verification-section"/);
+  assert.match(html, /id="row-phone-verification-settings"/);
+  assert.match(html, /id="btn-toggle-phone-verification-settings"/);
   assert.match(html, /id="row-phone-verification-fold"/);
-  assert.match(html, /id="input-phone-verification-enabled"/);
+  assert.doesNotMatch(html, /id="row-phone-verification-enabled"|id="input-phone-verification-enabled"|id="btn-toggle-phone-verification-section"/);
   assert.match(html, /id="row-signup-method"/);
   assert.match(html, /id="row-signup-phone"/);
   assert.match(html, /id="input-signup-phone"/);
@@ -649,7 +649,6 @@ let latestState = {
   accountContributionEnabled: false,
   targetId: 'cpa',
 };
-const inputPhoneVerificationEnabled = { checked: true };
 const inputPlusModeEnabled = { checked: false };
 function getSelectedFlowId() { return latestState.activeFlowId; }
 function getSelectedPanelMode() { return 'cpa'; }
@@ -678,7 +677,7 @@ return {
 test('settings expand buttons are hidden while their switches are off', () => {
   assert.match(
     sidepanelSource,
-    /btnTogglePhoneVerificationSection\.style\.display\s*=\s*enabled\s*\?\s*''\s*:\s*'none';/
+    /btnTogglePhoneVerificationSettings\.style\.display\s*=\s*canShowPhoneSettings\s*\?\s*''\s*:\s*'none';/
   );
 
   const ipProxyPanelSource = fs.readFileSync('sidepanel/ip-proxy-panel.js', 'utf8');
@@ -698,7 +697,7 @@ test('phone signup relogin-after-bind-email switch is wired into UI and step def
 
 test('manual step 3 uses phone identity without requiring registration email', () => {
   const api = new Function(`
-let latestState = { signupMethod: 'phone', phoneVerificationEnabled: true, signupPhoneNumber: '+441111111111', accountIdentifierType: 'phone', accountIdentifier: '+441111111111' };
+  let latestState = { signupMethod: 'phone', signupPhoneNumber: '+441111111111', accountIdentifierType: 'phone', accountIdentifier: '+441111111111' };
 const DEFAULT_SIGNUP_METHOD = 'email';
 const SIGNUP_METHOD_PHONE = 'phone';
 function getSelectedSignupMethod() { return 'phone'; }
@@ -710,7 +709,6 @@ return { shouldExecuteStep3WithSignupPhoneIdentity };
 
   assert.equal(api.shouldExecuteStep3WithSignupPhoneIdentity({
     signupMethod: 'phone',
-    phoneVerificationEnabled: true,
     accountIdentifierType: 'phone',
     accountIdentifier: '+441111111111',
     signupPhoneNumber: '+441111111111',
@@ -727,12 +725,11 @@ return { shouldExecuteStep3WithSignupPhoneIdentity };
 
 test('runtime signup phone sync preserves active manual input until it is saved', () => {
   const api = new Function(`
-let latestState = { signupMethod: 'phone', phoneVerificationEnabled: true, signupPhoneNumber: '+441111111111' };
+  let latestState = { signupMethod: 'phone', signupPhoneNumber: '+441111111111' };
 let signupPhoneInputDirty = true;
 let signupPhoneInputFocused = true;
 const inputSignupPhone = { value: '+442222222222' };
 const rowSignupPhone = { style: { display: 'none' } };
-const inputPhoneVerificationEnabled = { checked: true };
 const document = { activeElement: inputSignupPhone };
 function getSelectedSignupMethod() { return 'phone'; }
 ${extractFunction('normalizeSignupMethod')}
@@ -751,7 +748,6 @@ return {
 
   api.syncSignupPhoneInputFromState({
     signupMethod: 'phone',
-    phoneVerificationEnabled: true,
     signupPhoneNumber: '+441111111111',
   });
   assert.equal(api.inputSignupPhone.value, '+442222222222');
@@ -761,7 +757,6 @@ return {
   api.setFocused(false);
   api.syncSignupPhoneInputFromState({
     signupMethod: 'phone',
-    phoneVerificationEnabled: true,
     signupPhoneNumber: '+441111111111',
   });
   assert.equal(api.inputSignupPhone.value, '+441111111111');
@@ -890,8 +885,7 @@ function createMockClassList() {
 function createMockRow() {
   return { style: { display: 'none' }, classList: createMockClassList(), title: '' };
 }
-const inputPhoneVerificationEnabled = { checked: false };
-const rowPhoneVerificationEnabled = { style: { display: 'none' } };
+const rowPhoneVerificationSettings = { style: { display: 'none' } };
 const rowPhoneVerificationFold = { style: { display: 'none' } };
 const rowSignupMethod = { style: { display: 'none' } };
 const rowSignupPhone = { style: { display: 'none' } };
@@ -902,7 +896,7 @@ const selectPhoneSmsProvider = { value: 'hero-sms' };
 const selectMaDaoMode = { value: 'routing_plan' };
 let selectedSignupMethod = SIGNUP_METHOD_EMAIL;
 let capabilityOverride = null;
-const btnTogglePhoneVerificationSection = {
+const btnTogglePhoneVerificationSettings = {
   disabled: false,
   style: { display: '' },
   textContent: '',
@@ -1099,16 +1093,19 @@ ${extractFunction('getAllProviderUiRows')}
 ${extractFunction('updateProviderPriceControls')}
 function updateHeroSmsPlatformDisplay() {}
 function updateSignupMethodUI() {
-  rowSignupMethod.style.display = inputPhoneVerificationEnabled.checked ? '' : 'none';
+  rowSignupMethod.style.display = phoneVerificationSectionExpanded && capabilityOverride?.canShowPhoneSettings !== false ? '' : 'none';
 }
 function syncSignupPhoneInputFromState() {
-  rowSignupPhone.style.display = inputPhoneVerificationEnabled.checked && latestState.signupPhoneNumber ? '' : 'none';
+  rowSignupPhone.style.display = latestState.signupPhoneNumber
+    && capabilityOverride?.canShowPhoneSettings !== false
+    ? ''
+    : 'none';
 }
 function setFreePhoneReuseControlsLocked(locked) {
   inputFreePhoneReuseEnabled.disabled = Boolean(locked);
   inputFreePhoneReuseAutoEnabled.disabled = Boolean(locked)
     || !Boolean(inputFreePhoneReuseEnabled.checked)
-    || !Boolean(inputPhoneVerificationEnabled.checked && phoneVerificationSectionExpanded);
+    || !Boolean(phoneVerificationSectionExpanded);
 }
 function isAutoRunLockedPhase() { return false; }
 
@@ -1132,7 +1129,7 @@ return {
   },
   setCapabilityOverride(value) { capabilityOverride = value; },
   getSelectedSignupMethod,
-  rowPhoneVerificationEnabled,
+  rowPhoneVerificationSettings,
   rowPhoneVerificationFold,
   rowSignupMethod,
   rowSignupPhone,
@@ -1140,8 +1137,7 @@ return {
   rowPhoneSmsProviderOrder,
   rowPhoneSmsProviderOrderActions,
   selectPhoneSmsProvider,
-  btnTogglePhoneVerificationSection,
-  inputPhoneVerificationEnabled,
+  btnTogglePhoneVerificationSettings,
   rowHeroSmsPlatform,
   rowHeroSmsCountry,
   rowHeroSmsCountryFallback,
@@ -1204,18 +1200,18 @@ return {
 `)();
 
   api.updatePhoneVerificationSettingsUI();
-  assert.equal(api.rowPhoneVerificationEnabled.style.display, '');
+  assert.equal(api.rowPhoneVerificationSettings.style.display, '');
   assert.equal(api.rowPhoneVerificationFold.style.display, 'none');
   assert.equal(api.rowSignupMethod.style.display, 'none');
   assert.equal(api.rowSignupPhone.style.display, 'none');
   assert.equal(api.rowPhoneSmsProvider.style.display, 'none');
   assert.equal(api.rowPhoneSmsProviderOrder.style.display, 'none');
   assert.equal(api.rowPhoneSmsProviderOrderActions.style.display, 'none');
-  assert.equal(api.btnTogglePhoneVerificationSection.style.display, 'none');
-  assert.equal(api.btnTogglePhoneVerificationSection.disabled, true);
-  assert.equal(api.btnTogglePhoneVerificationSection.textContent, '展开设置');
+  assert.equal(api.btnTogglePhoneVerificationSettings.style.display, '');
+  assert.equal(api.btnTogglePhoneVerificationSettings.disabled, false);
+  assert.equal(api.btnTogglePhoneVerificationSettings.textContent, '展开设置');
   assert.equal(api.rowHeroSmsPlatform.style.display, '');
-  assert.equal(api.rowHeroSmsRuntimePair.style.display, 'none');
+  assert.equal(api.rowHeroSmsRuntimePair.style.display, '');
   assert.equal(api.rowHeroSmsCountry.style.display, 'none');
   assert.equal(api.rowHeroSmsCountryFallback.style.display, 'none');
   assert.equal(api.rowHeroSmsAcquirePriority.style.display, 'none');
@@ -1223,11 +1219,11 @@ return {
   assert.equal(api.rowHeroSmsApiKey.style.display, 'none');
   assert.equal(api.rowHeroSmsMaxPrice.style.display, 'none');
   assert.equal(api.rowFiveSimOperator.style.display, 'none');
-  assert.equal(api.rowHeroSmsCurrentNumber.style.display, 'none');
-  assert.equal(api.rowHeroSmsCurrentCountdown.style.display, 'none');
+  assert.equal(api.rowHeroSmsCurrentNumber.style.display, '');
+  assert.equal(api.rowHeroSmsCurrentCountdown.style.display, '');
   assert.equal(api.rowHeroSmsPriceTiers.style.display, 'none');
-  assert.equal(api.rowHeroSmsCurrentCode.style.display, 'none');
-  assert.equal(api.rowHeroSmsPreferredActivation.style.display, 'none');
+  assert.equal(api.rowHeroSmsCurrentCode.style.display, '');
+  assert.equal(api.rowHeroSmsPreferredActivation.style.display, '');
   assert.equal(api.rowPhoneVerificationResendCount.style.display, 'none');
   assert.equal(api.rowPhoneReplacementLimit.style.display, 'none');
   assert.equal(api.rowPhoneCodeFailureTopic.style.display, 'none');
@@ -1257,11 +1253,10 @@ return {
   assert.equal(api.rowMaDaoReusePhone.style.display, 'none');
   assert.equal(api.rowMaDaoPriceRange.style.display, 'none');
 
-  api.inputPhoneVerificationEnabled.checked = true;
   api.setLatestState({ signupPhoneNumber: '66959916439' });
   api.updatePhoneVerificationSettingsUI();
   assert.equal(api.rowPhoneVerificationFold.style.display, 'none');
-  assert.equal(api.rowSignupMethod.style.display, '');
+  assert.equal(api.rowSignupMethod.style.display, 'none');
   assert.equal(api.rowSignupPhone.style.display, '');
   assert.equal(api.rowPhoneSmsProvider.style.display, 'none');
   assert.equal(api.rowHeroSmsRuntimePair.style.display, '');
@@ -1269,7 +1264,7 @@ return {
   assert.equal(api.rowHeroSmsCurrentCountdown.style.display, '');
   assert.equal(api.rowHeroSmsCurrentCode.style.display, '');
   assert.equal(api.rowHeroSmsPreferredActivation.style.display, '');
-  assert.equal(api.btnTogglePhoneVerificationSection.style.display, '');
+  assert.equal(api.btnTogglePhoneVerificationSettings.style.display, '');
 
   api.setExpanded(true);
   api.updatePhoneVerificationSettingsUI();
@@ -1278,9 +1273,9 @@ return {
   assert.equal(api.rowPhoneSmsProvider.style.display, '');
   assert.equal(api.rowPhoneSmsProviderOrder.style.display, '');
   assert.equal(api.rowPhoneSmsProviderOrderActions.style.display, '');
-  assert.equal(api.btnTogglePhoneVerificationSection.style.display, '');
-  assert.equal(api.btnTogglePhoneVerificationSection.disabled, false);
-  assert.equal(api.btnTogglePhoneVerificationSection.textContent, '收起设置');
+  assert.equal(api.btnTogglePhoneVerificationSettings.style.display, '');
+  assert.equal(api.btnTogglePhoneVerificationSettings.disabled, false);
+  assert.equal(api.btnTogglePhoneVerificationSettings.textContent, '收起设置');
   assert.equal(api.rowHeroSmsPlatform.style.display, '');
   assert.equal(api.rowHeroSmsCountry.style.display, '');
   assert.equal(api.rowHeroSmsCountryFallback.style.display, '');
@@ -1427,7 +1422,6 @@ return {
   assert.equal(api.rowHeroSmsPreferredActivation.style.display, 'none');
 
   api.setExpanded(true);
-  api.inputPhoneVerificationEnabled.checked = true;
   api.setLatestState({
     activeFlowId: 'openai',
     targetId: 'webchat',
@@ -1437,12 +1431,10 @@ return {
   api.setCapabilityOverride({
     canShowPhoneSettings: false,
     effectiveSignupMethod: 'email',
-    runtimeLocks: { phoneVerificationEnabled: false },
   });
   api.updatePhoneVerificationSettingsUI();
-  assert.equal(api.inputPhoneVerificationEnabled.checked, false);
   assert.equal(api.getSelectedSignupMethod(), 'email');
-  assert.equal(api.rowPhoneVerificationEnabled.style.display, 'none');
+  assert.equal(api.rowPhoneVerificationSettings.style.display, 'none');
   assert.equal(api.rowPhoneVerificationFold.style.display, 'none');
   assert.equal(api.rowSignupMethod.style.display, 'none');
   assert.equal(api.rowSignupPhone.style.display, 'none');
@@ -1520,7 +1512,6 @@ const CLOUDFLARE_TEMP_EMAIL_SUBDOMAIN_MODE_FIXED = 'fixed';
 const inputAutoSkipFailures = { checked: false };
 const inputAutoSkipFailuresThreadIntervalMinutes = { value: '0' };
 const inputAutoStepDelaySeconds = { value: '' };
-const inputPhoneVerificationEnabled = { checked: true };
 const inputFreePhoneReuseEnabled = { checked: true };
 const inputFreePhoneReuseAutoEnabled = { checked: true };
 const selectPhoneSmsProvider = { value: 'hero-sms' };
@@ -1694,7 +1685,6 @@ function resolveCurrentSidepanelCapabilities(options = {}) {
     effectiveSignupMethod: options.signupMethod || 'phone',
     runtimeLocks: {
       plusModeEnabled: false,
-      phoneVerificationEnabled: Boolean(options.state?.phoneVerificationEnabled),
     },
   };
 }
@@ -1720,7 +1710,6 @@ return {
 
   const payload = api.collectSettingsPayload();
 
-  assert.equal(payload.phoneVerificationEnabled, true);
   assert.equal(payload.signupMethod, 'phone');
   assert.equal(payload.phoneSmsProvider, 'hero-sms');
   assert.deepStrictEqual(payload.phoneSmsProviderOrder, ['nexsms', '5sim']);
@@ -1778,7 +1767,6 @@ return {
   api.setLatestState({
     activeFlowId: 'openai',
     targetId: 'webchat',
-    phoneVerificationEnabled: true,
     signupMethod: 'phone',
     fiveSimCountryOrder: ['thailand', 'england'],
     heroSmsMinPrice: '0.0444',
@@ -1802,12 +1790,10 @@ return {
     effectiveSignupMethod: 'email',
     runtimeLocks: {
       plusModeEnabled: false,
-      phoneVerificationEnabled: false,
     },
   });
   const webchatPayload = api.collectSettingsPayload();
   assert.equal(webchatPayload.targetId, 'webchat');
-  assert.equal(webchatPayload.phoneVerificationEnabled, false);
   assert.equal(webchatPayload.signupMethod, 'email');
   assert.equal(webchatPayload.phoneSmsProvider, 'hero-sms');
   assert.deepStrictEqual(webchatPayload.phoneSmsProviderOrder, ['nexsms', '5sim']);
